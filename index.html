@@ -47,12 +47,19 @@
         <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor"/></svg>
       </button>
     </div>
+    <div id="style-bar" class="style-bar" role="radiogroup" aria-label="머리 스타일">
+      <div id="style-list" class="style-list"></div>
+      <button id="style-fold" class="style-fold" aria-label="스타일 접기">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
     <div class="tissue" aria-label="뽑은 흰머리"><canvas id="tissue-canvas"></canvas></div>
 
     <div id="hint" class="hint" hidden>
       <div class="hint-card">
-        <p><b>두 손가락</b>으로 확대, <b>한 손가락</b>으로 이동</p>
-        <p>흰머리를 <b>꾹 누르면</b> 핀셋으로 집혀요</p>
+        <p><b>한 손가락</b>으로 쓸면 머리카락을 뒤적여요</p>
+        <p><b>두 손가락</b>으로 확대·이동</p>
+        <p>흰머리 위에서 <b>꾹 누르거나 멈추면</b> 핀셋으로 집혀요</p>
         <p>바깥쪽으로 <b>천천히</b> 당기면 뿌리째 쏙</p>
         <span class="hint-tap">화면을 만지면 시작해요</span>
       </div>
@@ -113,6 +120,7 @@
 
 </div>
 <script src="js/feedback.js"></script>
+<script src="js/styles.js"></script>
 <script src="js/game.js"></script>
 <script src="js/app.js"></script>
 </body>

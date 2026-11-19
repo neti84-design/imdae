@@ -29,6 +29,7 @@
   }
 
   let lastIOS = 0;
+  let lastRustle = 0;
   function vib(pattern, iosOk) {
     if (!mult) return;
     if (canVibrate) {
@@ -118,6 +119,14 @@
     },
     /** 검은 머리를 집음: "앗" */
     oops() { vib(6, false); if (soundOn) tick(900, 0.05, 0.04); },
+    /** 뒤적일 때 사각사각 (소리 켰을 때만) */
+    rustle(i) {
+      if (!soundOn) return;
+      const now = performance.now();
+      if (now - lastRustle < 70) return;
+      lastRustle = now;
+      tick(5200 + Math.random() * 1800, 0.012 + i * 0.03, 0.05);
+    },
     complete() { vib([12, 70, 12, 70, 30], true); if (soundOn) chime(); },
     test() { vib([26, 55, 5], true); if (soundOn) tick(3800, 0.35, 0.03); }
   };

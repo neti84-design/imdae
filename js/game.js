@@ -1,14 +1,17 @@
-/* 쏙 — 머리 화면: 생성, 그리기, 제스처(이동·확대·집기·당기기), 뽑기 판정 */
+/* 쏙 — 머리 화면: 생성, 찰랑이는 머리카락 물리, 그리기,
+   제스처(뒤적이기·이동·확대·집기·당기기), 뽑기 판정 */
 (function () {
   'use strict';
   const S = (window.Ssok = window.Ssok || {});
 
   const W = 600;                 // 월드 폭 (높이는 화면 비율에 맞춰 생성)
   const TAU = Math.PI * 2;
-  const LONG_PRESS_MS = 220;     // 이 시간 누르고 있으면 집기
-  const MOVE_SLOP = 9;           // 이 이상 움직이면 집기 대신 화면 이동
+  const LONG_PRESS_MS = 220;     // 처음 꾹 누르고 있으면 집기
+  const STILL_MS = 260;          // 뒤적이다 이만큼 멈추면 집기
+  const MOVE_SLOP = 9;           // 이 이상 움직이면 뒤적이기
   const PICK_PX = 20;            // 흰머리 집기 허용 반경(화면 px)
   const OOPS_PX = 9;             // 검은 머리 "앗" 판정 반경
+  const BRUSH_PX = 46;           // 손가락이 머리카락을 미는 반경(화면 px)
   const MAX_ZOOM = 5.5;          // 최소 배율 대비 최대 배율
   const STUB_T = 0.16;           // 끊겼을 때 남는 길이 비율
 
@@ -16,6 +19,7 @@
   const lerp = (a, b, t) => a + (b - a) * t;
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
   const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
   function mulberry32(a) {
     return function () {
@@ -36,7 +40,6 @@
     const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
     return [a * h.x0 + b * h.x1 + c * h.x2 + d * h.x3, a * h.y0 + b * h.y1 + c * h.y2 + d * h.y3];
   }
-  // [0, t] 구간의 조절점 (드 카스텔조)
   function splitLeft(h, t) {
     const x01 = lerp(h.x0, h.x1, t), y01 = lerp(h.y0, h.y1, t);
     const x12 = lerp(h.x1, h.x2, t), y12 = lerp(h.y1, h.y2, t);
@@ -60,81 +63,196 @@
   }
 
   /* ---------- 머리 생성 ---------- */
-  function generate(seed, H) {
+  function generate(seed, H, styleId) {
+    const st = S.styleById(styleId);
     const r = mulberry32(seed);
-    const amp = 5 + r() * 14, per = 140 + r() * 170, ph = r() * TAU;
-    const partX = (y) => W / 2 + amp * Math.sin(y / per + ph);
-    const nBlack = 300 + Math.floor(r() * 301);   // 300~600
-    const nWhite = 8 + Math.floor(r() * 13);      // 8~20
+    const g = st.setup(r, W, H);
+    const nBlack = st.black[0] + Math.floor(r() * (st.black[1] - st.black[0] + 1));
+    const nWhite = 8 + Math.floor(r() * 13);   // 8~20
 
-    function mk(white) {
-      const y0 = -30 + r() * (H + 60);
-      const side = r() < 0.5 ? -1 : 1;
-      const d = white ? 9 + r() * 110 : 3 + Math.pow(r(), 1.5) * (W * 0.56);
-      const x0 = partX(y0) + side * d;
-      const len = white ? 80 + r() * 70 : 60 + r() * 105;
-      let ang = side < 0 ? Math.PI - (0.12 + r() * 0.6) : 0.12 + r() * 0.6;
-      ang += (r() - 0.5) * 0.35;
-      const bend = (r() - 0.5) * 0.9;
-      const a2 = ang + bend * 0.5, a3 = ang + bend;
-      return {
+    function build(p, dd, white) {
+      const ang = dd.ang, a0 = dd.a0 != null ? dd.a0 : ang, len = dd.len, bend = dd.bend, curl = dd.curl || 0;
+      const px = -Math.sin(ang), py = Math.cos(ang);
+      const x0 = p.x0, y0 = p.y0;
+      const h = {
         x0, y0,
-        x1: x0 + Math.cos(ang) * len * 0.35, y1: y0 + Math.sin(ang) * len * 0.35,
-        x2: x0 + Math.cos(a2) * len * 0.7, y2: y0 + Math.sin(a2) * len * 0.7,
-        x3: x0 + Math.cos(a3) * len, y3: y0 + Math.sin(a3) * len,
-        len, d, white,
-        w: white ? 2.0 + r() * 0.7 : 1.3 + r() * 1.1,
+        bx1: x0 + Math.cos(a0) * len * 0.35 + px * curl * len * 0.5,
+        by1: y0 + Math.sin(a0) * len * 0.35 + py * curl * len * 0.5,
+        bx2: x0 + Math.cos(ang + bend * 0.5) * len * 0.7 - px * curl * len * 0.5,
+        by2: y0 + Math.sin(ang + bend * 0.5) * len * 0.7 - py * curl * len * 0.5,
+        bx3: x0 + Math.cos(ang + bend) * len,
+        by3: y0 + Math.sin(ang + bend) * len,
+        ang, a0, len, bend, curl, d: p.d, white,
+        w: white ? Math.max(dd.w || 0, 1.9) + r() * 0.6 : dd.w || 1.3 + r() * 1.1,
         shade: Math.floor(r() * 4),
-        need: 80 + r() * 40,          // 뽑히는 당김 거리(px) 80~120
-        cut: 1, removed: false, broken: false
+        need: 80 + r() * 40,                // 뽑히는 당김 거리(px) 80~120
+        ph: r() * TAU,
+        k: white ? 110 + r() * 40 : 45 + r() * 35 - Math.min(len, 300) * 0.06,  // 흰머리는 뻣뻣
+        give: white ? 0.3 : 1,              // 손가락에 밀리는 정도
+        ox: 0, oy: 0, vx: 0, vy: 0, rx: 0, ry: 0,
+        cut: 1, removed: false, broken: false, hidden: false
       };
+      h.x1 = h.bx1; h.y1 = h.by1; h.x2 = h.bx2; h.y2 = h.by2; h.x3 = h.bx3; h.y3 = h.by3;
+      const xs = [x0, h.bx1, h.bx2, h.bx3], ys = [y0, h.by1, h.by2, h.by3];
+      const m = len * 0.85;
+      h.bb = [Math.min(...xs) - m, Math.min(...ys) - m, Math.max(...xs) + m, Math.max(...ys) + m];
+      return h;
     }
+    const make = (white) => { const p = st.root(g, r, W, H, white); return build(p, st.dir(g, r, p, white), white); };
 
-    const hairs = [];
-    for (let i = 0; i < nWhite; i++) hairs.push(mk(true));
-    for (let i = 0; i < nBlack; i++) hairs.push(mk(false));
+    const whites = [], blacks = [], covers = [];
+    for (let i = 0; i < nWhite; i++) { const h = make(true); h.hidden = r() < st.hidden; whites.push(h); }
+    for (let i = 0; i < nBlack; i++) blacks.push(make(false));
+    // 숨은 흰머리는 검은 머리 몇 가닥이 위를 덮는다 → 뒤적여야 보임
+    for (const w of whites) {
+      if (!w.hidden) continue;
+      const n = 5 + Math.floor(r() * 4);
+      const px = -Math.sin(w.ang), py = Math.cos(w.ang);
+      for (let i = 0; i < n; i++) {
+        const s = (r() - 0.5) * 14, a = (r() - 0.35) * 12;
+        const p = { x0: w.x0 + px * s + Math.cos(w.ang) * a, y0: w.y0 + py * s + Math.sin(w.ang) * a, d: w.d };
+        covers.push(build(p, {
+          ang: w.ang + (r() - 0.5) * 0.22, a0: w.a0 + (r() - 0.5) * 0.2,
+          len: w.len * (0.95 + r() * 0.35), bend: w.bend + (r() - 0.5) * 0.3, curl: w.curl
+        }, false));
+      }
+    }
+    const hairs = whites.concat(blacks, covers);
     hairs.forEach((h, i) => { h.id = i; });
 
-    // 그리는 순서: 검은 머리 65%를 먼저 깔고, 나머지와 흰머리를 섞어서 위에
-    const blacks = hairs.slice(nWhite);
     const base = blacks.slice(0, Math.floor(nBlack * 0.65));
-    const top = blacks.slice(base.length).concat(hairs.slice(0, nWhite));
+    const top = blacks.slice(base.length).concat(whites.filter((w) => !w.hidden));
     for (let i = top.length - 1; i > 0; i--) {
       const j = Math.floor(r() * (i + 1));
       [top[i], top[j]] = [top[j], top[i]];
     }
-    // 검은 머리 집기 판정용 샘플
-    blacks.forEach((h) => { h.pts = samples(h, 0, 1, 6); });
-
-    return { W, H, partX, hairs, whites: hairs.slice(0, nWhite), base, top };
+    return {
+      W, H, style: st, g, hairs, whites, base, top, covers, topBlack: top.filter((h) => !h.white),
+      hiddenWhites: whites.filter((w) => w.hidden),
+      blacks: blacks.concat(covers)
+    };
   }
 
   function buildMass(head) {
-    // 가르마에서 멀어질수록 진해지는 부드러운 머리 덩어리 (저해상도로 한 번만)
+    // 두피가 보이는 곳(가르마·가마)에서 멀어질수록 진해지는 머리 덩어리, 저해상도로 한 번만
     const k = 1 / 3;
     const cw = Math.ceil(head.W * k), ch = Math.ceil(head.H * k);
     const c = document.createElement('canvas');
     c.width = cw; c.height = ch;
     const g = c.getContext('2d');
+    const img = g.createImageData(cw, ch);
+    const st = head.style;
     for (let y = 0; y < ch; y++) {
-      const px = head.partX(y / k) * k;
-      const grad = g.createLinearGradient(0, 0, cw, 0);
-      const stop = (dx) => clamp((px + dx * k) / cw, 0, 1);
-      grad.addColorStop(0, 'rgba(30,23,19,0.93)');
-      grad.addColorStop(stop(-80), 'rgba(30,23,19,0.88)');
-      grad.addColorStop(stop(-26), 'rgba(34,26,21,0.35)');
-      grad.addColorStop(stop(-9), 'rgba(34,26,21,0)');
-      grad.addColorStop(stop(9), 'rgba(34,26,21,0)');
-      grad.addColorStop(stop(26), 'rgba(34,26,21,0.35)');
-      grad.addColorStop(stop(80), 'rgba(30,23,19,0.88)');
-      grad.addColorStop(1, 'rgba(30,23,19,0.93)');
-      g.fillStyle = grad;
-      g.fillRect(0, y, cw, 1);
+      for (let x = 0; x < cw; x++) {
+        const d = st.scalpDist(head.g, x / k, y / k);
+        const a = smooth(8, 85, d) * 0.8;
+        const i = (y * cw + x) * 4;
+        img.data[i] = 30; img.data[i + 1] = 23; img.data[i + 2] = 19; img.data[i + 3] = a * 255;
+      }
     }
+    g.putImageData(img, 0, 0);
     return c;
   }
 
   const SHADES = ['#1b1512', '#251d18', '#30261f', '#15100d'];
+
+  function drawWhite(ctx, h) {
+    ctx.strokeStyle = 'rgba(40,28,22,0.35)';
+    ctx.lineWidth = h.w + 1.1;
+    ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
+    ctx.strokeStyle = '#efebe3';
+    ctx.lineWidth = h.w;
+    ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.lineWidth = h.w * 0.35;
+    ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
+    if (h.cut < 1) {
+      const [ex, ey] = bez(h, h.cut);
+      ctx.fillStyle = '#d9d3c8';
+      ctx.beginPath(); ctx.arc(ex, ey, h.w * 0.6, 0, TAU); ctx.fill();
+    }
+  }
+
+  // 머리 한 장 그리기 (게임 화면과 스타일 미리보기가 같이 씀). 월드 좌표계에서 호출
+  function drawHead(ctx, head, mass, skip, progress) {
+    const sg = ctx.createRadialGradient(head.W / 2, head.H * 0.42, 20, head.W / 2, head.H * 0.5, head.H * 0.75);
+    sg.addColorStop(0, '#f3d9c6');
+    sg.addColorStop(1, '#e3bea6');
+    ctx.fillStyle = sg;
+    ctx.fillRect(-40, -40, head.W + 80, head.H + 80);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(mass, 0, 0, head.W, head.H);
+
+    // 모공 (두피가 보이는 곳)
+    ctx.fillStyle = 'rgba(96,70,58,0.55)';
+    ctx.beginPath();
+    for (const h of head.blacks) if (h.d < 55) { ctx.moveTo(h.x0 + 1, h.y0); ctx.arc(h.x0, h.y0, h.w * 0.55, 0, TAU); }
+    ctx.fill();
+
+    ctx.lineCap = 'round';
+    // 바닥층: 색·굵기별로 묶어서 한 번에
+    for (let k = 0; k < SHADES.length; k++) {
+      ctx.strokeStyle = SHADES[k];
+      for (const thin of [true, false]) {
+        ctx.lineWidth = thin ? 1.5 : 2.1;
+        ctx.beginPath();
+        for (const h of head.base) if (h.shade === k && (h.w < 1.85) === thin) pathHair(ctx, h);
+        ctx.stroke();
+      }
+    }
+    // 윗층 검은 머리, 그 위에 드러난 흰머리
+    for (let k = 0; k < SHADES.length; k++) {
+      ctx.strokeStyle = SHADES[k];
+      for (const thin of [true, false]) {
+        ctx.lineWidth = thin ? 1.4 : 2.0;
+        ctx.beginPath();
+        for (const h of head.topBlack) if (h.shade === k && (h.w < 1.85) === thin) pathHair(ctx, h);
+        ctx.stroke();
+      }
+    }
+    for (const h of head.top) if (h.white && !h.removed && h !== skip) drawWhite(ctx, h);
+    // 숨은 흰머리와 그 위를 덮은 검은 머리
+    for (const h of head.hiddenWhites) if (!h.removed && h !== skip) drawWhite(ctx, h);
+    for (let k = 0; k < SHADES.length; k++) {
+      ctx.strokeStyle = SHADES[k];
+      ctx.lineWidth = 1.9;
+      ctx.beginPath();
+      for (const h of head.covers) if (h.shade === k) pathHair(ctx, h);
+      ctx.stroke();
+    }
+    // 윤기: 흰머리가 줄수록 진해지는 결 방향 하이라이트
+    const gloss = head.style.gloss || 1;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = Math.min(0.5, (0.04 + progress * 0.16) * gloss);
+    ctx.strokeStyle = '#8f7a6a';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    for (const h of head.base) if (h.shade < 2) pathHair(ctx, h);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ---------- 스타일 미리보기 ---------- */
+  const thumbCache = {};
+  S.renderThumb = function (canvas, styleId) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cw = canvas.clientWidth || 56, ch = canvas.clientHeight || 56;
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    if (!thumbCache[styleId]) {
+      const head = generate(20241118, 1000, styleId);
+      thumbCache[styleId] = { head, mass: buildMass(head) };
+    }
+    const { head, mass } = thumbCache[styleId];
+    const f = head.g.focus || [];
+    const fx = f[0] != null ? f[0] : head.W / 2, fy = f[1] != null ? f[1] : head.H / 2;
+    const sc = cw / 230;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(cw / 2 - fx * sc, ch / 2 - fy * sc);
+    ctx.scale(sc, sc);
+    drawHead(ctx, head, mass, null, 0.3);
+  };
 
   /* ======================================================================= */
   class Game {
@@ -150,8 +268,8 @@
       this.flies = [];
       this.fx = [];
       this.running = false;
-      this.dirty = true;
       this.head = null;
+      this.lastT = 0;
       this._loop = this._loop.bind(this);
       this._bind();
     }
@@ -161,24 +279,24 @@
       const rect = this.cv.getBoundingClientRect();
       const aspect = (rect.height || 800) / (rect.width || 400);
       const H = Math.round(clamp(W * aspect, 760, 1400));
-      this.load({ v: 1, mode: opts.mode, seed: opts.seed >>> 0, date: opts.date || null, H, removed: [], cuts: {}, broken: [], tissue: [], stats: { clean: 0, removed: 0, breaks: 0 } });
+      this.load({ v: 1, mode: opts.mode, style: opts.style || 'part', seed: opts.seed >>> 0, date: opts.date || null, H, removed: [], cuts: {}, broken: [], tissue: [], stats: { clean: 0, removed: 0, breaks: 0 } });
     }
 
     load(st) {
+      st.style = st.style || 'part';
       this.st = st;
-      this.head = generate(st.seed, st.H);
+      this.head = generate(st.seed, st.H, st.style);
       this.mass = buildMass(this.head);
       st.removed.forEach((id) => { this.head.hairs[id].removed = true; });
       Object.keys(st.cuts).forEach((id) => { this.head.hairs[id].cut = st.cuts[id]; });
       (st.broken || []).forEach((id) => { this.head.hairs[id].broken = true; });
-      this.flies = []; this.fx = []; this.grab = null; this.mode = 'idle';
+      this.flies = []; this.fx = []; this.grab = null; this.snap = null; this.mode = 'idle';
       this.finishing = null;
       this.resize();
       if (st.cam) { this.s = st.cam.s * this.minS; this.tx = st.cam.x * this.vw; this.ty = st.cam.y * this.vh; this._clampCam(); }
       else this._initCam();
       this._drawTissue();
       this._emitRemain();
-      this.dirty = true;
     }
 
     getState() {
@@ -190,8 +308,9 @@
     get total() { return this.head ? this.head.whites.length : 0; }
     get remain() { return this.head ? this.head.whites.filter((h) => !h.removed).length : 0; }
     get isComplete() { return this.head && this.remain === 0; }
+    get style() { return this.st ? this.st.style : null; }
 
-    start() { if (!this.running) { this.running = true; this.dirty = true; requestAnimationFrame(this._loop); } }
+    start() { if (!this.running) { this.running = true; this.lastT = 0; requestAnimationFrame(this._loop); } }
     stop() { this.running = false; this._cancelGesture(); }
 
     /* ---------- 카메라 ---------- */
@@ -212,12 +331,13 @@
         this._clampCam();
         this._drawTissue();
       }
-      this.dirty = true;
     }
     _initCam() {
+      const f = this.head.g.focus || [];
+      const fx = f[0] != null ? f[0] : this.head.W / 2, fy = f[1] != null ? f[1] : this.head.H / 2;
       this.s = this.minS * 1.35;
-      this.tx = this.vw / 2 - (this.head.W / 2) * this.s;
-      this.ty = this.vh / 2 - (this.head.H / 2) * this.s;
+      this.tx = this.vw / 2 - fx * this.s;
+      this.ty = this.vh / 2 - fy * this.s;
       this._clampCam();
     }
     _clampCam() {
@@ -233,14 +353,15 @@
       this.tx = sx - wx * this.s;
       this.ty = sy - wy * this.s;
       this._clampCam();
-      this.dirty = true;
     }
     _animZoom(sx, sy, ns) {
       const [wx, wy] = this.toWorld(sx, sy);
       this.camAnim = { t0: performance.now(), dur: 260, s0: this.s, s1: ns, wx, wy, sx, sy };
     }
 
-    /* ---------- 입력 ---------- */
+    /* ---------- 입력 ----------
+       한 손가락: 쓸면 뒤적이기, 꾹 누르거나 뒤적이다 멈추면 집기
+       두 손가락: 이동·확대 / 마우스: 오른쪽 버튼·Shift 드래그로 이동, 휠로 확대 */
     _bind() {
       const cv = this.cv;
       const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -250,19 +371,23 @@
         this.fb.unlock();
         try { cv.setPointerCapture(e.pointerId); } catch (_) { /* noop */ }
         const [x, y] = pos(e);
-        this.pointers.set(e.pointerId, { x, y });
+        this.pointers.set(e.pointerId, { x, y, t: performance.now() });
         if (this.hooks.onTouch) this.hooks.onTouch();
-        if (this.pointers.size === 1) this._down1(e.pointerId, x, y);
-        else if (this.pointers.size === 2) this._startPinch();
+        if (this.pointers.size === 1) {
+          if (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2 || e.shiftKey)) {
+            clearTimeout(this.lpTimer); this.mode = 'pan'; this.press = null;
+          } else this._down1(e.pointerId, x, y);
+        } else if (this.pointers.size === 2) this._startPinch();
       });
       cv.addEventListener('pointermove', (e) => {
         const p = this.pointers.get(e.pointerId);
         if (!p) return;
         e.preventDefault();
         const [x, y] = pos(e);
-        const dx = x - p.x, dy = y - p.y;
-        p.x = x; p.y = y;
-        this._move(e.pointerId, x, y, dx, dy);
+        const now = performance.now();
+        const dx = x - p.x, dy = y - p.y, dt = Math.max(8, now - p.t) / 1000;
+        p.x = x; p.y = y; p.t = now;
+        this._move(e.pointerId, x, y, dx, dy, dt);
       });
       const up = (e) => {
         if (!this.pointers.has(e.pointerId)) return;
@@ -285,8 +410,7 @@
       clearTimeout(this.lpTimer);
       this.mode = 'pending';
       this.press = { id, x0: x, y0: y, t0: performance.now() };
-      this.lpTimer = setTimeout(() => this._tryGrab(), LONG_PRESS_MS);
-      this.dirty = true;
+      this.lpTimer = setTimeout(() => this._tryGrab(false), LONG_PRESS_MS);
     }
 
     _startPinch() {
@@ -294,23 +418,23 @@
       if (this.mode === 'grab') this._release(true);
       const [a, b] = [...this.pointers.values()];
       this.mode = 'pinch';
-      this.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, s0: this.s, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
-      const [wx, wy] = this.toWorld(this.pinch.mx, this.pinch.my);
+      this.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, s0: this.s };
+      const [wx, wy] = this.toWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
       this.pinch.wx = wx; this.pinch.wy = wy;
       this.press = null;
-      this.dirty = true;
     }
 
-    _move(id, x, y, dx, dy) {
-      if (this.mode === 'pending') {
-        if (Math.hypot(x - this.press.x0, y - this.press.y0) > MOVE_SLOP) {
-          clearTimeout(this.lpTimer);
-          this.mode = 'pan';
-          this.tx += x - this.press.x0 - dx; this.ty += y - this.press.y0 - dy; // 놓친 거리 반영
-        }
+    _move(id, x, y, dx, dy, dt) {
+      if (this.mode === 'pending' && Math.hypot(x - this.press.x0, y - this.press.y0) > MOVE_SLOP) {
+        this.mode = 'rummage';
+        this._brush(this.press.x0, this.press.y0, x - this.press.x0 - dx, y - this.press.y0 - dy, dt);
+        this._still(id, x, y);
       }
-      if (this.mode === 'pan') {
-        this.tx += dx; this.ty += dy; this._clampCam(); this.dirty = true;
+      if (this.mode === 'rummage') {
+        this._brush(x, y, dx, dy, dt);
+        if (Math.hypot(x - this.press.x0, y - this.press.y0) > MOVE_SLOP) this._still(id, x, y);
+      } else if (this.mode === 'pan') {
+        this.tx += dx; this.ty += dy; this._clampCam();
       } else if (this.mode === 'pinch' && this.pointers.size >= 2) {
         const [a, b] = [...this.pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
@@ -319,10 +443,16 @@
         this.tx = mx - this.pinch.wx * this.s;
         this.ty = my - this.pinch.wy * this.s;
         this._clampCam();
-        this.dirty = true;
       } else if (this.mode === 'grab' && this.grab && id === this.grab.pid) {
         this._pull(x, y);
       }
+    }
+
+    // 뒤적이다 손가락이 멈추면 그 자리에서 집기 시도
+    _still(id, x, y) {
+      this.press = { id, x0: x, y0: y, t0: performance.now() };
+      clearTimeout(this.lpTimer);
+      this.lpTimer = setTimeout(() => this._tryGrab(true), STILL_MS);
     }
 
     _up(id, cancelled) {
@@ -338,12 +468,10 @@
       }
       if (this.mode === 'grab' && this.grab && id === this.grab.pid) this._release(false);
       if (this.mode === 'pinch') {
+        // 두 손가락 중 하나를 떼면 남은 손가락은 이동만 (실수로 뒤적이지 않게)
         this.mode = this.pointers.size === 1 ? 'pan' : 'idle';
-      } else if (this.pointers.size === 0) {
-        if (this.mode !== 'snap') this.mode = 'idle';
-      }
-      this.press = this.pointers.size ? this.press : null;
-      this.dirty = true;
+      } else if (this.pointers.size === 0) this.mode = 'idle';
+      if (!this.pointers.size) this.press = null;
     }
 
     _cancelGesture() {
@@ -354,9 +482,69 @@
       this.press = null;
     }
 
+    /* ---------- 뒤적이기: 손가락 근처 머리카락을 민다 ---------- */
+    _brush(sx, sy, dx, dy, dt) {
+      if (!dx && !dy) return;
+      const [wx, wy] = this.toWorld(sx, sy);
+      const dwx = dx / this.s, dwy = dy / this.s;
+      const R = clamp(BRUSH_PX / this.s, 10, 90), R2 = R * R;
+      let fvx = dwx / dt, fvy = dwy / dt;
+      const fv = Math.hypot(fvx, fvy);
+      if (fv > 1400) { fvx *= 1400 / fv; fvy *= 1400 / fv; }
+      const skip = this.grab ? this.grab.h : null;
+      let moved = 0;
+      for (const h of this.head.hairs) {
+        if (h.removed || h === skip) continue;
+        const bb = h.bb;
+        if (wx < bb[0] - R || wx > bb[2] + R || wy < bb[1] - R || wy > bb[3] + R) continue;
+        // 머리카락 중간~끝 몇 점과의 거리
+        let d2 = Infinity;
+        const pts = [[h.x1, h.y1], [h.x2, h.y2], [(h.x2 + h.x3) / 2, (h.y2 + h.y3) / 2], [h.x3, h.y3]];
+        for (const [px, py] of pts) {
+          const e = (px - wx) * (px - wx) + (py - wy) * (py - wy);
+          if (e < d2) d2 = e;
+        }
+        if (d2 >= R2) continue;
+        let f = 1 - Math.sqrt(d2) / R;
+        f *= f * h.give;
+        h.ox += dwx * f * 0.95; h.oy += dwy * f * 0.95;
+        h.vx += (fvx - h.vx) * f * 0.3; h.vy += (fvy - h.vy) * f * 0.3;
+        const m = Math.hypot(h.ox, h.oy), lim = h.len * 0.8;
+        if (m > lim) { h.ox *= lim / m; h.oy *= lim / m; }
+        // 쓸린 쪽으로 결이 잠시 남는다 (갈라진 채 찰랑이다 천천히 돌아옴)
+        h.rx += (h.ox - h.rx) * f * 0.7; h.ry += (h.oy - h.ry) * f * 0.7;
+        moved += f;
+      }
+      if (moved > 0.5) this.fb.rustle(clamp(fv / 900, 0, 1));
+    }
+
+    /* ---------- 찰랑: 스프링 + 잔잔한 바람결 ---------- */
+    _physics(dt, now) {
+      const skip = this.grab ? this.grab.h : this.snap ? this.snap.g.h : null;
+      const t = now * 0.001;
+      for (const h of this.head.hairs) {
+        if (h.removed || h === skip) continue;
+        if (h.ox || h.oy || h.vx || h.vy || h.rx || h.ry) {
+          const decay = 1 - (h.white ? 2 : 0.4) * dt;      // 갈라진 결이 ~2.5초에 걸쳐 풀림
+          h.rx *= decay; h.ry *= decay;
+          h.vx += (-h.k * (h.ox - h.rx) - 3.0 * h.vx) * dt;
+          h.vy += (-h.k * (h.oy - h.ry) - 3.0 * h.vy) * dt;
+          h.ox += h.vx * dt; h.oy += h.vy * dt;
+          if (Math.abs(h.ox) + Math.abs(h.oy) + Math.abs(h.rx) + Math.abs(h.ry) < 0.05 && Math.abs(h.vx) + Math.abs(h.vy) < 0.05) {
+            h.ox = h.oy = h.vx = h.vy = h.rx = h.ry = 0;
+          }
+        }
+        const b = (Math.sin(t * 1.1 + h.y0 * 0.011 + h.x0 * 0.004) * 0.6 + Math.sin(t * 2.3 + h.ph) * 0.4) * h.len * 0.018;
+        const ex = h.ox - Math.sin(h.ang) * b, ey = h.oy + Math.cos(h.ang) * b;
+        h.x1 = h.bx1 + ex * 0.1; h.y1 = h.by1 + ey * 0.1;
+        h.x2 = h.bx2 + ex * 0.45; h.y2 = h.by2 + ey * 0.45;
+        h.x3 = h.bx3 + ex; h.y3 = h.by3 + ey;
+      }
+    }
+
     /* ---------- 집기 ---------- */
-    _tryGrab() {
-      if (this.mode !== 'pending' || !this.press) return;
+    _tryGrab(quiet) {
+      if (!this.press || (this.mode !== 'pending' && this.mode !== 'rummage')) return;
       const { x0, y0, id } = this.press;
       const [wx, wy] = this.toWorld(x0, y0);
       const tol = PICK_PX / this.s;
@@ -374,47 +562,38 @@
       }
       if (best) {
         const h = best.h;
-        // 뿌리 쪽으로 너무 붙어 집으면 살짝 바깥에서 집은 것으로
         const t = Math.max(best.t, Math.min(h.cut, 0.08));
         const [gx, gy] = bez(h, t);
         const [rsx, rsy] = this.toScreen(h.x0, h.y0);
         const [gsx, gsy] = this.toScreen(gx, gy);
+        h.vx = h.vy = 0;
         this.grab = {
-          h, t, gx, gy, pid: id,
-          fx: gx, fy: gy, tension: 0,
+          h, t, gx, gy, pid: id, fx: gx, fy: gy, tension: 0,
           base: Math.hypot(gsx - rsx, gsy - rsy),
           hist: [[performance.now(), 0]], lastBuzz: 0
         };
         this.mode = 'grab';
         this.fb.grab();
-        this.dirty = true;
         return;
       }
-      // 검은 머리를 집었는지
+      if (quiet) return; // 뒤적이는 중엔 조용히 계속
       const tolB = OOPS_PX / this.s;
       let hitBlack = false;
-      for (const h of this.head.top) {
-        if (h.white) continue;
-        for (const [px, py] of h.pts) {
-          if (Math.abs(px - wx) < tolB && Math.abs(py - wy) < tolB) { hitBlack = true; break; }
+      for (const h of this.head.blacks) {
+        const bb = h.bb;
+        if (wx < bb[0] || wx > bb[2] || wy < bb[1] || wy > bb[3]) continue;
+        for (let i = 0; i <= 6 && !hitBlack; i++) {
+          const [px, py] = bez(h, i / 6);
+          if (Math.abs(px - wx) < tolB && Math.abs(py - wy) < tolB) hitBlack = true;
         }
         if (hitBlack) break;
-      }
-      if (!hitBlack) {
-        for (const h of this.head.base) {
-          for (const [px, py] of h.pts) {
-            if (Math.abs(px - wx) < tolB && Math.abs(py - wy) < tolB) { hitBlack = true; break; }
-          }
-          if (hitBlack) break;
-        }
       }
       if (hitBlack) {
         this.fx.push({ kind: 'oops', x: x0, y: y0 - 26, t0: performance.now(), dur: 750 });
         this.fb.oops();
       }
-      this.mode = 'pan';
-      this.press = null;
-      this.dirty = true;
+      this.mode = 'rummage';
+      this.press = { id, x0, y0, t0: performance.now() };
     }
 
     /* ---------- 당기기 ---------- */
@@ -432,7 +611,6 @@
         this.fb.tension(g.tension);
         g.lastBuzz = now;
       }
-      this.dirty = true;
       if (pull >= h.need) this._pluck(sx, sy);
     }
 
@@ -451,10 +629,8 @@
       if (h.cut < 1) breakP = 0; // 남은 짧은 머리는 항상 뿌리째
       const broken = Math.random() < breakP;
 
-      // 날아갈 조각 (화면 좌표): 집은 점이 손가락 위치에 오도록 원래 모양을 평행이동
       const t0 = broken ? STUB_T : 0;
       const pts = samples(h, t0, h.cut, 16).map(([x, y]) => this.toScreen(x - g.gx + g.fx, y - g.gy + g.fy));
-      // 뿌리 쪽 부분을 손가락 쪽으로 살짝 끌어올린 듯 곧게
       const lenWorld = h.len * (h.cut - t0);
 
       const st = this.st;
@@ -477,7 +653,6 @@
 
       this.grab = null;
       this.mode = 'idle';
-      this.dirty = true;
       this._emitRemain();
       if (this.hooks.onPluck) this.hooks.onPluck({ root: !broken, speed: v });
       if (!broken && this.hooks.onRemove) this.hooks.onRemove({ clean: !h.broken });
@@ -488,11 +663,10 @@
     _release(instant) {
       const g = this.grab;
       if (!g) return;
-      if (instant) { this.grab = null; this.dirty = true; return; }
+      if (instant) { this.grab = null; return; }
       this.snap = { g, t0: performance.now(), dur: 200, fx: g.fx, fy: g.fy, ten: g.tension };
       this.grab = null;
-      this.mode = this.pointers.size ? 'pan' : 'idle';
-      this.dirty = true;
+      this.mode = this.pointers.size ? 'rummage' : 'idle';
     }
 
     /* ---------- 휴지 ---------- */
@@ -507,7 +681,6 @@
       const cr = this.cv.getBoundingClientRect();
       const n = this.st.tissue.length + 1 + this.flies.length;
       const [lx, ly] = this._slot(n - 1, n);
-      // 목표: 휴지 위 슬롯의 중앙 (play 캔버스 좌표계)
       const tx = tr.left - cr.left + lx + item.l / 2;
       const ty = tr.top - cr.top + ly;
       const a = pts[0], z = pts[pts.length - 1];
@@ -522,10 +695,9 @@
       g.setTransform(d, 0, 0, d, 0, 0);
       g.clearRect(0, 0, this.tw, this.th);
       const items = this.st.tissue;
-      const n = items.length;
       items.forEach((it, i) => {
-        const [x, y] = this._slot(i, n);
-        drawLaidHair(g, x, y, it, 1);
+        const [x, y] = this._slot(i, items.length);
+        drawLaidHair(g, x, y, it);
       });
     }
 
@@ -534,7 +706,6 @@
       this.finishing = { t0: performance.now() + 650, dur: 1700, done: false };
       this._cancelGesture();
     }
-
     _emitRemain() {
       if (this.hooks.onRemain) this.hooks.onRemain(this.remain, this.total);
     }
@@ -542,16 +713,19 @@
     /* ---------- 루프 ---------- */
     _loop(now) {
       if (!this.running) return;
+      const dt = this.lastT ? clamp((now - this.lastT) / 1000, 0.001, 0.034) : 0.016;
+      this.lastT = now;
       if (this.camAnim) {
         const a = this.camAnim, p = clamp((now - a.t0) / a.dur, 0, 1), e = easeOut(p);
         this.s = clamp(lerp(a.s0, a.s1, e), this.minS, this.minS * MAX_ZOOM);
         this.tx = a.sx - a.wx * this.s; this.ty = a.sy - a.wy * this.s;
         this._clampCam();
         if (p >= 1) this.camAnim = null;
-        this.dirty = true;
       }
-      const animating = this.flies.length || this.fx.length || this.snap || this.camAnim || this.finishing || this.mode === 'pending' || this.grab;
-      if (this.dirty || animating) { this._draw(now); this.dirty = false; }
+      if (this.head) {
+        this._physics(dt, now);
+        this._draw(now);
+      }
       requestAnimationFrame(this._loop);
     }
 
@@ -560,82 +734,26 @@
       ctx.setTransform(d, 0, 0, d, 0, 0);
       ctx.fillStyle = '#e8c7b0';
       ctx.fillRect(0, 0, this.vw, this.vh);
-      if (!head) return;
       const progress = this.total ? 1 - this.remain / this.total : 0;
 
       ctx.save();
       ctx.translate(this.tx, this.ty);
       ctx.scale(this.s, this.s);
-
-      // 두피
-      const sg = ctx.createRadialGradient(head.W / 2, head.H * 0.42, 20, head.W / 2, head.H * 0.5, head.H * 0.75);
-      sg.addColorStop(0, '#f3d9c6');
-      sg.addColorStop(1, '#e3bea6');
-      ctx.fillStyle = sg;
-      ctx.fillRect(-40, -40, head.W + 80, head.H + 80);
-      // 머리 덩어리
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(this.mass, 0, 0, head.W, head.H);
-
-      // 모공 (가르마 근처)
-      ctx.fillStyle = 'rgba(96,70,58,0.55)';
-      ctx.beginPath();
-      for (const h of head.base) if (h.d < 55) { ctx.moveTo(h.x0 + 1, h.y0); ctx.arc(h.x0, h.y0, h.w * 0.55, 0, TAU); }
-      for (const h of head.top) if (!h.white && h.d < 55) { ctx.moveTo(h.x0 + 1, h.y0); ctx.arc(h.x0, h.y0, h.w * 0.55, 0, TAU); }
-      ctx.fill();
-
-      ctx.lineCap = 'round';
-      // 바닥층: 색별로 묶어서 한 번에
-      for (let k = 0; k < SHADES.length; k++) {
-        ctx.strokeStyle = SHADES[k];
-        for (const wv of [1.5, 2.1]) {
-          ctx.lineWidth = wv;
-          ctx.beginPath();
-          for (const h of head.base) if (h.shade === k && (h.w < 1.85) === (wv === 1.5)) pathHair(ctx, h);
-          ctx.stroke();
-        }
-      }
-      // 윗층 (흰머리 섞임)
       const grabbed = this.grab ? this.grab.h : this.snap ? this.snap.g.h : null;
-      for (const h of head.top) {
-        if (h.removed || h === grabbed) continue;
-        if (h.white) this._drawWhite(ctx, h);
-        else {
-          ctx.strokeStyle = SHADES[h.shade];
-          ctx.lineWidth = h.w;
-          ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
-        }
-      }
+      drawHead(ctx, head, this.mass, grabbed, progress);
 
-      // 윤기: 흰머리가 줄수록 진해지는 결 방향 하이라이트
-      if (progress > 0) {
-        ctx.save();
-        ctx.globalCompositeOperation = 'screen';
-        ctx.globalAlpha = 0.05 + progress * 0.16;
-        ctx.strokeStyle = '#8f7a6a';
-        ctx.lineWidth = 0.6;
-        ctx.beginPath();
-        for (const h of head.base) if (h.shade < 2) pathHair(ctx, h);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // 당기는 중 / 되돌아가는 중
       if (this.grab) this._drawPulled(ctx, this.grab.h, this.grab.t, this.grab.gx, this.grab.gy, this.grab.fx, this.grab.fy, this.grab.tension);
       else if (this.snap) {
         const sn = this.snap, p = clamp((now - sn.t0) / sn.dur, 0, 1), e = easeOut(p);
         const g = sn.g;
-        // 살짝 튕기는 느낌
         const k = 1 - e + Math.sin(e * Math.PI) * -0.08;
         this._drawPulled(ctx, g.h, g.t, g.gx, g.gy, lerp(g.gx, sn.fx, k), lerp(g.gy, sn.fy, k), sn.ten * (1 - e));
         if (p >= 1) this.snap = null;
       }
       ctx.restore();
 
-      // 핀셋
       if (this.grab) this._drawTweezers(ctx, ...this.toScreen(this.grab.fx, this.grab.fy), this.grab.tension);
 
-      // 길게 누르는 중 표시
       if (this.mode === 'pending' && this.press) {
         const p = clamp((now - this.press.t0 - 60) / (LONG_PRESS_MS - 60), 0, 1);
         if (p > 0) {
@@ -652,38 +770,19 @@
       if (this.finishing) this._drawFinish(ctx, now);
     }
 
-    _drawWhite(ctx, h) {
-      ctx.strokeStyle = 'rgba(40,28,22,0.35)';
-      ctx.lineWidth = h.w + 1.1;
-      ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
-      ctx.strokeStyle = '#efebe3';
-      ctx.lineWidth = h.w;
-      ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = h.w * 0.35;
-      ctx.beginPath(); pathHair(ctx, h); ctx.stroke();
-      if (h.cut < 1) { // 끊긴 끝
-        const [ex, ey] = bez(h, h.cut);
-        ctx.fillStyle = '#d9d3c8';
-        ctx.beginPath(); ctx.arc(ex, ey, h.w * 0.6, 0, TAU); ctx.fill();
-      }
-    }
-
     _drawPulled(ctx, h, t, gx, gy, fx, fy, ten) {
-      // 뿌리가 당겨지며 두피가 살짝 솟음
       ctx.fillStyle = `rgba(250,226,210,${0.5 + ten * 0.4})`;
       ctx.beginPath(); ctx.ellipse(h.x0, h.y0, 1.6 + ten * 3.2, 1.3 + ten * 2.6, 0, 0, TAU); ctx.fill();
       ctx.strokeStyle = `rgba(160,110,90,${0.15 + ten * 0.3})`;
       ctx.lineWidth = 0.6;
       ctx.stroke();
-      // 뿌리→집은 점: 원래 곡선을 손가락 쪽으로, 장력에 따라 곧게
       const left = samples(h, 0, t, 12);
       const ox = fx - gx, oy = fy - gy;
+      const k = clamp(ten * 1.2 + 0.25, 0, 1);
       const pts = left.map(([x, y], i) => {
         const u = i / 12;
-        const sx = lerp(h.x0, fx, u), sy = lerp(h.y0, fy, u); // 직선
-        const cx = x + ox * u, cy = y + oy * u;               // 휘어진 채 따라옴
-        const k = clamp(ten * 1.2 + 0.25, 0, 1);
+        const sx = lerp(h.x0, fx, u), sy = lerp(h.y0, fy, u);
+        const cx = x + ox * u, cy = y + oy * u;
         return [lerp(cx, sx, k), lerp(cy, sy, k)];
       });
       const right = h.cut > t ? samples(h, t, h.cut, 12).map(([x, y]) => [x + ox, y + oy]) : [];
@@ -701,7 +800,7 @@
     }
 
     _drawTweezers(ctx, x, y, ten) {
-      const ang = -Math.PI / 4 - 0.2; // 오른쪽 위에서 들어오는 핀셋
+      const ang = -Math.PI / 4 - 0.2;
       const L = 78, open = 7 - ten * 3;
       ctx.save();
       ctx.translate(x, y);
@@ -726,33 +825,32 @@
       const keep = [];
       for (const f of this.flies) {
         const p = clamp((now - f.t0) / f.dur, 0, 1);
-        const pop = clamp(p / 0.18, 0, 1);  // 먼저 톡 튀어 오르고
-        const fly = easeInOut(clamp((p - 0.12) / 0.88, 0, 1)); // 휴지로
+        const pop = clamp(p / 0.18, 0, 1);
+        const fly = easeInOut(clamp((p - 0.12) / 0.88, 0, 1));
         const cx = lerp(f.cx, f.tx, fly);
         const cy = lerp(f.cy, f.ty, fly) - Math.sin(fly * Math.PI) * 50 - (1 - fly) * easeOut(pop) * 10;
-        const rot = -f.ang * fly;
         const sc = lerp(1, f.sc, fly);
         ctx.save();
-        ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+        ctx.translate(cx, cy); ctx.rotate(-f.ang * fly); ctx.scale(sc, sc);
         ctx.translate(-f.cx, -f.cy);
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        const line = (style, w) => {
-          ctx.strokeStyle = style; ctx.lineWidth = w / sc;
+        const w = lerp(f.w, 1.8, fly);
+        const line = (style, lw) => {
+          ctx.strokeStyle = style; ctx.lineWidth = lw / sc;
           ctx.beginPath(); ctx.moveTo(f.pts[0][0], f.pts[0][1]);
           for (let i = 1; i < f.pts.length; i++) ctx.lineTo(f.pts[i][0], f.pts[i][1]);
           ctx.stroke();
         };
-        const w = lerp(f.w, 1.8, fly);
         line('rgba(40,28,22,0.3)', w + 1.2);
         line('#f4f0e9', w);
         if (f.item.root) { // 하얀 모근
           const [rx, ry] = f.pts[0];
           const bx = Math.cos(f.ang), by = Math.sin(f.ang);
+          const brx = lerp(w * 1.4, 2.6, fly) / sc, bry = lerp(w * 0.95, 1.8, fly) / sc;
           ctx.fillStyle = '#fffdf8';
           ctx.strokeStyle = 'rgba(120,95,80,0.4)';
           ctx.lineWidth = 0.8 / sc;
           ctx.beginPath();
-          const brx = lerp(w * 1.4, 2.6, fly) / sc, bry = lerp(w * 0.95, 1.8, fly) / sc;
           ctx.ellipse(rx + bx * brx * 0.5, ry + by * brx * 0.5, brx, bry, f.ang, 0, TAU);
           ctx.fill(); ctx.stroke();
         }
@@ -804,10 +902,9 @@
       const f = this.finishing;
       if (now < f.t0) return;
       const p = clamp((now - f.t0) / f.dur, 0, 1);
-      // 대각선으로 지나가는 윤기
       const span = this.vw + this.vh;
       const c = lerp(-0.3, 1.3, easeInOut(p)) * span;
-      const g = ctx.createLinearGradient(c - 160, c - 160 - this.vw * 0, c + 160, c + 160);
+      const g = ctx.createLinearGradient(c - 160, c - 160, c + 160, c + 160);
       g.addColorStop(0, 'rgba(255,255,255,0)');
       g.addColorStop(0.5, 'rgba(255,246,230,0.42)');
       g.addColorStop(1, 'rgba(255,255,255,0)');
@@ -816,15 +913,13 @@
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, this.vw, this.vh);
       ctx.restore();
-      // 반짝이
       if (!f.sparks) {
         f.sparks = Array.from({ length: 18 }, () => ({ x: Math.random() * this.vw, y: Math.random() * this.vh, o: Math.random() * 0.7, r: 3 + Math.random() * 6 }));
       }
       for (const s of f.sparks) {
         const q = clamp((p - s.o * 0.8) / 0.3, 0, 1);
         const a = Math.sin(q * Math.PI);
-        if (a <= 0) continue;
-        drawSpark(ctx, s.x, s.y, s.r * (0.6 + a * 0.6), a);
+        if (a > 0) drawSpark(ctx, s.x, s.y, s.r * (0.6 + a * 0.6), a);
       }
       if (p >= 1 && !f.done) {
         f.done = true;
@@ -857,9 +952,8 @@
     ctx.restore();
   }
   // 휴지 위에 가지런히 놓인 흰머리
-  function drawLaidHair(g, x, y, it, alpha) {
+  function drawLaidHair(g, x, y, it) {
     g.save();
-    g.globalAlpha = alpha;
     g.lineCap = 'round';
     const ex = x + it.l, cy = y + it.b * 6;
     const path = () => { g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo((x + ex) / 2, cy, ex, y + it.b * 2); };
@@ -873,7 +967,6 @@
     }
     g.restore();
   }
-  S.drawLaidHair = drawLaidHair;
 
   S.Game = Game;
 })();

@@ -13,7 +13,7 @@
 
   /* ---------- 저장 ---------- */
   const defaults = () => ({
-    settings: { vib: 'normal', sound: false, notify: false, seenHint: false },
+    settings: { vib: 'normal', sound: false, notify: false, seenHint: false, style: 'part', styleFolded: false },
     records: { days: {}, total: 0, streak: 0, lastDaily: null },
     current: { free: null, daily: null }
   });
@@ -98,12 +98,54 @@
     show('play'); // 먼저 보여야 캔버스 크기를 잴 수 있다
     const cur = data.current[m];
     if (cur && cur.v === 1 && (m !== 'daily' || cur.date === today())) game.load(cur);
-    else if (m === 'daily') game.newRound({ mode: m, seed: S.hashStr('ssok-daily-' + today()), date: today() });
-    else game.newRound({ mode: m, seed: (Math.random() * 2 ** 32) >>> 0 });
+    else newHead(m, data.settings.style);
     data.current[m] = game.getState();
     save();
+    renderStyleBar();
     $('mode-tag').textContent = m === 'daily' ? '오늘의 한 판' : '';
   }
+
+  function newHead(m, style) {
+    if (m === 'daily') game.newRound({ mode: m, style, seed: S.hashStr('ssok-daily-' + today()), date: today() });
+    else game.newRound({ mode: m, style, seed: (Math.random() * 2 ** 32) >>> 0 });
+  }
+
+  /* ---------- 머리 스타일 고르기 (상단 미리보기) ---------- */
+  const styleBar = $('style-bar');
+  const styleList = $('style-list');
+  S.STYLES.forEach((st) => {
+    const b = document.createElement('button');
+    b.className = 'style-opt';
+    b.dataset.id = st.id;
+    b.setAttribute('role', 'radio');
+    b.innerHTML = '<canvas></canvas><span></span>';
+    b.querySelector('span').textContent = st.name;
+    b.addEventListener('click', () => {
+      if (styleBar.classList.contains('folded')) { setFolded(false); return; }
+      if (game.style === st.id) return;
+      data.settings.style = st.id;
+      newHead(mode, st.id);
+      data.current[mode] = game.getState();
+      save();
+      renderStyleBar();
+    });
+    styleList.appendChild(b);
+  });
+  let thumbsDrawn = false;
+  function renderStyleBar() {
+    if (!thumbsDrawn) {
+      styleList.querySelectorAll('.style-opt').forEach((b) => S.renderThumb(b.querySelector('canvas'), b.dataset.id));
+      thumbsDrawn = true;
+    }
+    const cur = game.style || data.settings.style;
+    styleList.querySelectorAll('.style-opt').forEach((b) => {
+      b.classList.toggle('on', b.dataset.id === cur);
+      b.setAttribute('aria-checked', b.dataset.id === cur);
+    });
+    styleBar.classList.toggle('folded', !!data.settings.styleFolded);
+  }
+  function setFolded(f) { data.settings.styleFolded = f; save(); renderStyleBar(); }
+  $('style-fold').addEventListener('click', () => setFolded(!data.settings.styleFolded));
 
   function persist() {
     if (game.head && !game.isComplete) { data.current[mode] = game.getState(); save(); }
