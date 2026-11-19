@@ -8,6 +8,8 @@
   const TAU = Math.PI * 2;
   const LONG_PRESS_MS = 220;     // 처음 꾹 누르고 있으면 집기
   const STILL_MS = 260;          // 뒤적이다 이만큼 멈추면 집기
+  const PINCH_WINDOW_MS = 140;   // 두 손가락이 이 안에 같이 닿으면 이동·확대
+  const HOLD_PX = 24;            // 대고 있는 손가락이 머리카락을 막는 반경(화면 px)
   const MOVE_SLOP = 9;           // 이 이상 움직이면 뒤적이기
   const PICK_PX = 20;            // 흰머리 집기 허용 반경(화면 px)
   const OOPS_PX = 9;             // 검은 머리 "앗" 판정 반경
@@ -145,7 +147,7 @@
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
         const d = st.scalpDist(head.g, x / k, y / k);
-        const a = smooth(8, 85, d) * 0.8;
+        const a = smooth(2, 26, d) * 0.85;
         const i = (y * cw + x) * 4;
         img.data[i] = 30; img.data[i + 1] = 23; img.data[i + 2] = 19; img.data[i + 3] = a * 255;
       }
@@ -186,7 +188,7 @@
     // 모공 (두피가 보이는 곳)
     ctx.fillStyle = 'rgba(96,70,58,0.55)';
     ctx.beginPath();
-    for (const h of head.blacks) if (h.d < 55) { ctx.moveTo(h.x0 + 1, h.y0); ctx.arc(h.x0, h.y0, h.w * 0.55, 0, TAU); }
+    for (const h of head.blacks) if (h.d < 22) { ctx.moveTo(h.x0 + 1, h.y0); ctx.arc(h.x0, h.y0, h.w * 0.55, 0, TAU); }
     ctx.fill();
 
     ctx.lineCap = 'round';
@@ -360,8 +362,11 @@
     }
 
     /* ---------- 입력 ----------
-       한 손가락: 쓸면 뒤적이기, 꾹 누르거나 뒤적이다 멈추면 집기
-       두 손가락: 이동·확대 / 마우스: 오른쪽 버튼·Shift 드래그로 이동, 휠로 확대 */
+       손가락마다 따로 동작한다 (여러 손가락으로 시간차를 두고 대도 됨)
+       - 쓸기: 머리카락 뒤적이기. 대고 있는 동안 그 자리는 갈라진 채 유지
+       - 꾹 누르기 / 뒤적이다 멈추기: 흰머리를 핀셋으로 집기 (한 번에 한 가닥)
+       - 두 손가락을 거의 동시에 대면: 이동·확대
+       마우스: 오른쪽 버튼·Shift 드래그로 이동, 휠로 확대 */
     _bind() {
       const cv = this.cv;
       const pos = (e) => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -371,13 +376,15 @@
         this.fb.unlock();
         try { cv.setPointerCapture(e.pointerId); } catch (_) { /* noop */ }
         const [x, y] = pos(e);
-        this.pointers.set(e.pointerId, { x, y, t: performance.now() });
+        const now = performance.now();
+        const p = { id: e.pointerId, x, y, t: now, tDown: now, mode: 'pending', x0: x, y0: y, t0: now, timer: 0 };
+        this.pointers.set(e.pointerId, p);
         if (this.hooks.onTouch) this.hooks.onTouch();
-        if (this.pointers.size === 1) {
-          if (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2 || e.shiftKey)) {
-            clearTimeout(this.lpTimer); this.mode = 'pan'; this.press = null;
-          } else this._down1(e.pointerId, x, y);
-        } else if (this.pointers.size === 2) this._startPinch();
+        if (e.pointerType === 'mouse' && (e.button === 1 || e.button === 2 || e.shiftKey)) { p.mode = 'pan'; return; }
+        if (this.pinchIds) { p.mode = 'none'; return; }
+        const buddy = [...this.pointers.values()].find((q) => q !== p && q.mode === 'pending' && now - q.tDown < PINCH_WINDOW_MS);
+        if (buddy && !this.grab) { this._startPinch(buddy, p); return; }
+        this._arm(p, LONG_PRESS_MS, false);
       });
       cv.addEventListener('pointermove', (e) => {
         const p = this.pointers.get(e.pointerId);
@@ -387,12 +394,13 @@
         const now = performance.now();
         const dx = x - p.x, dy = y - p.y, dt = Math.max(8, now - p.t) / 1000;
         p.x = x; p.y = y; p.t = now;
-        this._move(e.pointerId, x, y, dx, dy, dt);
+        this._move(p, dx, dy, dt);
       });
       const up = (e) => {
-        if (!this.pointers.has(e.pointerId)) return;
+        const p = this.pointers.get(e.pointerId);
+        if (!p) return;
         this.pointers.delete(e.pointerId);
-        this._up(e.pointerId, e.type === 'pointercancel');
+        this._up(p, e.type === 'pointercancel');
       };
       cv.addEventListener('pointerup', up);
       cv.addEventListener('pointercancel', up);
@@ -406,80 +414,72 @@
       cv.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
-    _down1(id, x, y) {
-      clearTimeout(this.lpTimer);
-      this.mode = 'pending';
-      this.press = { id, x0: x, y0: y, t0: performance.now() };
-      this.lpTimer = setTimeout(() => this._tryGrab(false), LONG_PRESS_MS);
+    // 이 손가락이 지금 자리에서 ms 동안 머물면 집기 시도
+    _arm(p, ms, quiet) {
+      clearTimeout(p.timer);
+      p.x0 = p.x; p.y0 = p.y; p.t0 = performance.now();
+      p.timer = setTimeout(() => this._tryGrab(p, quiet), ms);
     }
 
-    _startPinch() {
-      clearTimeout(this.lpTimer);
-      if (this.mode === 'grab') this._release(true);
-      const [a, b] = [...this.pointers.values()];
-      this.mode = 'pinch';
+    _startPinch(a, b) {
+      clearTimeout(a.timer); clearTimeout(b.timer);
+      a.mode = b.mode = 'pinch';
+      this.pinchIds = [a.id, b.id];
       this.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, s0: this.s };
       const [wx, wy] = this.toWorld((a.x + b.x) / 2, (a.y + b.y) / 2);
       this.pinch.wx = wx; this.pinch.wy = wy;
-      this.press = null;
     }
 
-    _move(id, x, y, dx, dy, dt) {
-      if (this.mode === 'pending' && Math.hypot(x - this.press.x0, y - this.press.y0) > MOVE_SLOP) {
-        this.mode = 'rummage';
-        this._brush(this.press.x0, this.press.y0, x - this.press.x0 - dx, y - this.press.y0 - dy, dt);
-        this._still(id, x, y);
+    _move(p, dx, dy, dt) {
+      const x = p.x, y = p.y;
+      if (p.mode === 'pending' && Math.hypot(x - p.x0, y - p.y0) > MOVE_SLOP) {
+        p.mode = 'rummage';
+        this._brush(p.x0, p.y0, x - p.x0 - dx, y - p.y0 - dy, dt);
+        this._arm(p, STILL_MS, true);
       }
-      if (this.mode === 'rummage') {
+      if (p.mode === 'rummage') {
         this._brush(x, y, dx, dy, dt);
-        if (Math.hypot(x - this.press.x0, y - this.press.y0) > MOVE_SLOP) this._still(id, x, y);
-      } else if (this.mode === 'pan') {
+        if (Math.hypot(x - p.x0, y - p.y0) > MOVE_SLOP) this._arm(p, STILL_MS, true);
+      } else if (p.mode === 'pan') {
         this.tx += dx; this.ty += dy; this._clampCam();
-      } else if (this.mode === 'pinch' && this.pointers.size >= 2) {
-        const [a, b] = [...this.pointers.values()];
+      } else if (p.mode === 'pinch' && this.pinchIds) {
+        const a = this.pointers.get(this.pinchIds[0]), b = this.pointers.get(this.pinchIds[1]);
+        if (!a || !b) return;
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         this.s = clamp(this.pinch.s0 * (d / this.pinch.d0), this.minS, this.minS * MAX_ZOOM);
         this.tx = mx - this.pinch.wx * this.s;
         this.ty = my - this.pinch.wy * this.s;
         this._clampCam();
-      } else if (this.mode === 'grab' && this.grab && id === this.grab.pid) {
+      } else if (p.mode === 'grab' && this.grab && this.grab.pid === p.id) {
         this._pull(x, y);
       }
     }
 
-    // 뒤적이다 손가락이 멈추면 그 자리에서 집기 시도
-    _still(id, x, y) {
-      this.press = { id, x0: x, y0: y, t0: performance.now() };
-      clearTimeout(this.lpTimer);
-      this.lpTimer = setTimeout(() => this._tryGrab(true), STILL_MS);
-    }
-
-    _up(id, cancelled) {
-      clearTimeout(this.lpTimer);
-      if (this.mode === 'pending' && this.press && !cancelled) {
+    _up(p, cancelled) {
+      clearTimeout(p.timer);
+      if (p.mode === 'pending' && !cancelled && this.pointers.size === 0) {
         const now = performance.now();
         const lt = this.lastTap;
-        if (lt && now - lt.t < 320 && Math.hypot(lt.x - this.press.x0, lt.y - this.press.y0) < 40) {
+        if (lt && now - lt.t < 320 && Math.hypot(lt.x - p.x0, lt.y - p.y0) < 40) {
           const target = this.s < this.minS * 2 ? this.minS * 2.6 : this.minS;
-          this._animZoom(this.press.x0, this.press.y0, target);
+          this._animZoom(p.x0, p.y0, target);
           this.lastTap = null;
-        } else this.lastTap = { t: now, x: this.press.x0, y: this.press.y0 };
+        } else this.lastTap = { t: now, x: p.x0, y: p.y0 };
       }
-      if (this.mode === 'grab' && this.grab && id === this.grab.pid) this._release(false);
-      if (this.mode === 'pinch') {
-        // 두 손가락 중 하나를 떼면 남은 손가락은 이동만 (실수로 뒤적이지 않게)
-        this.mode = this.pointers.size === 1 ? 'pan' : 'idle';
-      } else if (this.pointers.size === 0) this.mode = 'idle';
-      if (!this.pointers.size) this.press = null;
+      if (this.grab && this.grab.pid === p.id) this._release(false);
+      if (p.mode === 'pinch') {
+        // 확대하던 손가락 중 하나를 떼면 남은 손가락은 이동만 (실수로 뒤적이지 않게)
+        this.pinchIds = null;
+        for (const q of this.pointers.values()) if (q.mode === 'pinch') q.mode = 'pan';
+      }
     }
 
     _cancelGesture() {
-      clearTimeout(this.lpTimer);
+      for (const p of this.pointers.values()) clearTimeout(p.timer);
       if (this.grab) this._release(true);
       this.pointers.clear();
-      this.mode = 'idle';
-      this.press = null;
+      this.pinchIds = null;
     }
 
     /* ---------- 뒤적이기: 손가락 근처 머리카락을 민다 ---------- */
@@ -522,8 +522,29 @@
     _physics(dt, now) {
       const skip = this.grab ? this.grab.h : this.snap ? this.snap.g.h : null;
       const t = now * 0.001;
+      // 대고 있는 손가락들: 머리카락이 넘어오지 못하게 막는다 → 여러 손가락으로 가르기
+      const fingers = [];
+      for (const p of this.pointers.values()) {
+        if (p.mode === 'pending' || p.mode === 'rummage') fingers.push(this.toWorld(p.x, p.y));
+      }
+      const Ro = clamp(HOLD_PX / this.s, 6, 60);
       for (const h of this.head.hairs) {
         if (h.removed || h === skip) continue;
+        for (const [fx, fy] of fingers) {
+          const bb = h.bb;
+          if (fx < bb[0] - Ro || fx > bb[2] + Ro || fy < bb[1] - Ro || fy > bb[3] + Ro) continue;
+          const pts = [[h.x2, h.y2, 0.45], [(h.x2 + h.x3) / 2, (h.y2 + h.y3) / 2, 0.72], [h.x3, h.y3, 1]];
+          for (const [px, py, w] of pts) {
+            const ddx = px - fx, ddy = py - fy, d = Math.hypot(ddx, ddy);
+            if (d >= Ro) continue;
+            let nx, ny;
+            if (d > 0.01) { nx = ddx / d; ny = ddy / d; } else { nx = -Math.sin(h.ang); ny = Math.cos(h.ang); }
+            const push = ((Ro - d) / w) * 0.5;
+            h.ox += nx * push; h.oy += ny * push;
+            h.rx += nx * push; h.ry += ny * push;
+            h.vx *= 0.85; h.vy *= 0.85;
+          }
+        }
         if (h.ox || h.oy || h.vx || h.vy || h.rx || h.ry) {
           const decay = 1 - (h.white ? 2 : 0.4) * dt;      // 갈라진 결이 ~2.5초에 걸쳐 풀림
           h.rx *= decay; h.ry *= decay;
@@ -543,9 +564,10 @@
     }
 
     /* ---------- 집기 ---------- */
-    _tryGrab(quiet) {
-      if (!this.press || (this.mode !== 'pending' && this.mode !== 'rummage')) return;
-      const { x0, y0, id } = this.press;
+    _tryGrab(p, quiet) {
+      if (this.pointers.get(p.id) !== p || (p.mode !== 'pending' && p.mode !== 'rummage')) return;
+      if (this.grab) return; // 핀셋은 하나
+      const x0 = p.x, y0 = p.y;
       const [wx, wy] = this.toWorld(x0, y0);
       const tol = PICK_PX / this.s;
       let best = null, bd = Infinity;
@@ -568,11 +590,11 @@
         const [gsx, gsy] = this.toScreen(gx, gy);
         h.vx = h.vy = 0;
         this.grab = {
-          h, t, gx, gy, pid: id, fx: gx, fy: gy, tension: 0,
+          h, t, gx, gy, pid: p.id, fx: gx, fy: gy, tension: 0,
           base: Math.hypot(gsx - rsx, gsy - rsy),
           hist: [[performance.now(), 0]], lastBuzz: 0
         };
-        this.mode = 'grab';
+        p.mode = 'grab';
         this.fb.grab();
         return;
       }
@@ -592,8 +614,7 @@
         this.fx.push({ kind: 'oops', x: x0, y: y0 - 26, t0: performance.now(), dur: 750 });
         this.fb.oops();
       }
-      this.mode = 'rummage';
-      this.press = { id, x0, y0, t0: performance.now() };
+      p.mode = 'rummage'; // 그대로 대고 있으면 가르는 손가락
     }
 
     /* ---------- 당기기 ---------- */
@@ -651,8 +672,9 @@
       this.fx.push({ kind: 'pop', x: sx, y: sy, t0: performance.now(), dur: 380, root: !broken });
       if (broken) this.fx.push({ kind: 'note', text: '끊겼어요 · 남은 걸 다시 집어보세요', t0: performance.now(), dur: 1800 });
 
+      const gp = this.pointers.get(g.pid);
+      if (gp) gp.mode = 'rummage';
       this.grab = null;
-      this.mode = 'idle';
       this._emitRemain();
       if (this.hooks.onPluck) this.hooks.onPluck({ root: !broken, speed: v });
       if (!broken && this.hooks.onRemove) this.hooks.onRemove({ clean: !h.broken });
@@ -666,7 +688,8 @@
       if (instant) { this.grab = null; return; }
       this.snap = { g, t0: performance.now(), dur: 200, fx: g.fx, fy: g.fy, ten: g.tension };
       this.grab = null;
-      this.mode = this.pointers.size ? 'rummage' : 'idle';
+      const gp = this.pointers.get(g.pid);
+      if (gp) gp.mode = 'rummage';
     }
 
     /* ---------- 휴지 ---------- */
@@ -754,13 +777,14 @@
 
       if (this.grab) this._drawTweezers(ctx, ...this.toScreen(this.grab.fx, this.grab.fy), this.grab.tension);
 
-      if (this.mode === 'pending' && this.press) {
-        const p = clamp((now - this.press.t0 - 60) / (LONG_PRESS_MS - 60), 0, 1);
+      for (const pt of this.pointers.values()) {
+        if (pt.mode !== 'pending' || this.grab) continue;
+        const p = clamp((now - pt.t0 - 60) / (LONG_PRESS_MS - 60), 0, 1);
         if (p > 0) {
           ctx.strokeStyle = 'rgba(255,255,255,0.75)';
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(this.press.x0, this.press.y0, 22, -Math.PI / 2, -Math.PI / 2 + p * TAU);
+          ctx.arc(pt.x0, pt.y0, 22, -Math.PI / 2, -Math.PI / 2 + p * TAU);
           ctx.stroke();
         }
       }
