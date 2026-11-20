@@ -1,4 +1,4 @@
-/* 다른 심신안정: 뽁뽁이 · 키캡 (소리는 항상 켜짐, 화면 안 🔊 버튼으로만 끔) */
+/* 다른 심신안정: 뽁뽁이 · 키캡 (소리 항상 켜짐, 화면 위 슬라이더로 크기 조절) */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -12,8 +12,8 @@
       if (!AC) return null;
       ac = new AC();
       out = ac.createGain();
-      out.gain.value = 0.9;
       out.connect(ac.destination);
+      applyVol();
     }
     if (ac.state === 'suspended') ac.resume();
     return ac;
@@ -106,13 +106,44 @@
   }
   ['touchend', 'pointerup', 'click', 'keydown'].forEach((ev) => document.addEventListener(ev, unlock, { capture: true, passive: true }));
 
-  document.querySelectorAll('.calm-mute').forEach((b) => b.addEventListener('click', () => {
-    muted = !muted;
-    document.querySelectorAll('.calm-mute').forEach((x) => (x.textContent = muted ? '🔇' : '🔊'));
-    if (!muted) popSound();
-  }));
+  /* ---------- 소리 크기 (0~100, 기기에 저장) ---------- */
+  const VKEY = 'ssok:calm-vol';
+  let vol = 80, muteFlag = false;
+  try { const v = parseInt(localStorage.getItem(VKEY), 10); if (v >= 0 && v <= 100) vol = v; } catch (e) { /* noop */ }
+  function applyVol() {
+    muted = muteFlag || vol === 0;
+    if (out) out.gain.value = muted ? 0 : Math.pow(vol / 100, 1.6) * 1.5;
+    document.querySelectorAll('.calm-vol').forEach((box) => {
+      box.classList.toggle('off', muted);
+      const r = box.querySelector('.vol-range');
+      r.value = vol;
+      r.style.setProperty('--p', vol + '%');
+      box.querySelector('.vol-num').textContent = muted ? '끔' : vol;
+      box.querySelector('.vol-icon').textContent = muted ? '🔇' : vol < 35 ? '🔈' : vol < 70 ? '🔉' : '🔊';
+    });
+  }
+  const preview = () => (isOn('keys') ? (keyDown(false), setTimeout(keyUp, 90)) : popSound());
+  let lastPrev = 0;
+  document.querySelectorAll('.calm-vol').forEach((box) => {
+    const r = box.querySelector('.vol-range');
+    r.addEventListener('input', () => {
+      vol = +r.value; muteFlag = false; audio(); applyVol();
+      try { localStorage.setItem(VKEY, vol); } catch (e) { /* noop */ }
+      const now = performance.now();
+      if (now - lastPrev > 160) { lastPrev = now; preview(); }
+    });
+    box.querySelector('.vol-icon').addEventListener('click', () => {
+      if (vol === 0) { vol = 60; muteFlag = false; } else muteFlag = !muteFlag;
+      audio(); applyVol(); if (!muted) preview();
+    });
+  });
+  applyVol();
   // 메뉴로 들어올 때 오디오 깨우기 (iOS는 사용자 터치 안에서만 소리 허용)
   document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => audio()));
+
+  /* ---------- 색깔 ---------- */
+  const COLORS = ['255,138,160', '255,176,92', '255,214,70', '120,214,140', '90,200,230', '120,150,255', '186,130,255', '255,120,210'];
+  const pick = () => COLORS[(Math.random() * COLORS.length) | 0];
 
   /* ---------- 뽁뽁이 ---------- */
   const wrap = $('wrap');
@@ -128,10 +159,34 @@
   function popAt(x, y) {
     const el = document.elementFromPoint(x, y);
     if (!el || !el.classList.contains('bubble') || el.classList.contains('popped')) return;
+    const c = pick();
+    el.style.setProperty('--c', c);
     el.classList.add('popped');
     popSound(); buzz(30);
+    burstFx(el, c);
     $('pop-count').textContent = `${++pops}개 터뜨림`;
     if (!wrap.querySelector('.bubble:not(.popped)')) setTimeout(buildWrap, 700);
+  }
+  const WORDS = ['뽁!', '톡!', '뿅!', '뽁', '팡!'];
+  function burstFx(el, c) {
+    const wr = wrap.getBoundingClientRect(), r = el.getBoundingClientRect();
+    const x = r.left - wr.left + r.width / 2, y = r.top - wr.top + r.height / 2;
+    const add = (cls, extra) => {
+      const d = document.createElement('div');
+      d.className = 'fx ' + cls;
+      d.style.left = x + 'px'; d.style.top = y + 'px';
+      d.style.setProperty('--c', c);
+      if (extra) extra(d);
+      wrap.appendChild(d);
+      setTimeout(() => d.remove(), 800);
+    };
+    add('fx-ring');
+    const n = 6, a0 = Math.random() * Math.PI;
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * Math.PI * 2, dist = 26 + Math.random() * 18;
+      add('fx-dot', (d) => { d.style.setProperty('--dx', Math.cos(a) * dist + 'px'); d.style.setProperty('--dy', Math.sin(a) * dist + 'px'); });
+    }
+    if (Math.random() < 0.45) add('fx-word', (d) => { d.textContent = WORDS[(Math.random() * WORDS.length) | 0]; });
   }
   const dragging = new Set();
   wrap.addEventListener('pointerdown', (e) => {
@@ -169,10 +224,31 @@
     });
     board.appendChild(row);
   });
-  let presses = 0;
+  let presses = 0, hue = 0, boardTimer = 0;
+  const keyList = Object.values(keyEls);
   function press(k) {
     if (!k || k.classList.contains('down')) return;
+    const c = COLORS[hue++ % COLORS.length];
+    k.style.setProperty('--c', c);
     k.classList.add('down');
+    // 눌린 키에서 물결처럼 옆 키들이 잠깐 빛남
+    const kr = k.getBoundingClientRect(), kx = kr.left + kr.width / 2, ky = kr.top + kr.height / 2;
+    keyList.forEach((o) => {
+      if (o === k) return;
+      const r = o.getBoundingClientRect();
+      const d = Math.hypot(r.left + r.width / 2 - kx, r.top + r.height / 2 - ky);
+      if (d > 120) return;
+      setTimeout(() => {
+        if (o.classList.contains('down')) return;
+        o.style.setProperty('--c', c);
+        o.classList.add('glow');
+        setTimeout(() => o.classList.remove('glow'), 120);
+      }, d * 1.6);
+    });
+    board.style.setProperty('--glow', c);
+    board.classList.add('lit');
+    clearTimeout(boardTimer);
+    boardTimer = setTimeout(() => board.classList.remove('lit'), 140);
     keyDown(/w(15|5)/.test(k.className));
     buzz(/w(15|5)/.test(k.className) ? 28 : 18);
     $('key-count').textContent = `${++presses}번 딸깍`;

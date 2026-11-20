@@ -144,8 +144,12 @@
   <section id="screen-bubble" class="screen calm-screen">
     <header class="bar calm-bar">
       <button class="calm-back" data-go="calm">← 다른 심신안정 으로 가실래요?</button>
-      <button class="calm-mute" aria-label="소리">🔊</button>
     </header>
+    <div class="calm-vol">
+      <button class="vol-icon" aria-label="소리 끄기/켜기">🔊</button>
+      <input class="vol-range" type="range" min="0" max="100" step="1" value="80" aria-label="소리 크기">
+      <span class="vol-num">80</span>
+    </div>
     <div class="calm-tools">
       <span id="pop-count" class="muted">0개 터뜨림</span>
       <button id="new-wrap" class="calm-chip">새 뽁뽁이</button>
@@ -158,8 +162,12 @@
   <section id="screen-keys" class="screen calm-screen">
     <header class="bar calm-bar">
       <button class="calm-back" data-go="calm">← 다른 심신안정 으로 가실래요?</button>
-      <button class="calm-mute" aria-label="소리">🔊</button>
     </header>
+    <div class="calm-vol">
+      <button class="vol-icon" aria-label="소리 끄기/켜기">🔊</button>
+      <input class="vol-range" type="range" min="0" max="100" step="1" value="80" aria-label="소리 크기">
+      <span class="vol-num">80</span>
+    </div>
     <div class="calm-tools"><span id="key-count" class="muted">0번 딸깍</span></div>
     <div id="switches" class="switches">
       <button data-sw="blue" class="on"><i style="background:#4a8fe0"></i>청축 찰칵</button>
