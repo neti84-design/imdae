@@ -127,6 +127,13 @@
       lastRustle = now;
       tick(5200 + Math.random() * 1800, 0.012 + i * 0.03, 0.05);
     },
+    /** 다른 심신안정용: 설정과 상관없이 항상 울림 (아이폰은 시스템 햅틱) */
+    buzz(pattern) {
+      setupIOSSwitch();
+      const m = mult; if (!mult) mult = 1;
+      vib(pattern, true);
+      mult = m;
+    },
     complete() { vib([12, 70, 12, 70, 30], true); if (soundOn) chime(); },
     test() { vib([26, 55, 5], true); if (soundOn) tick(3800, 0.35, 0.03); }
   };

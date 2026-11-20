@@ -82,7 +82,29 @@
     if (muted || !s.up || !audio()) return;
     burst(ac.currentTime, 0.02, 'bandpass', s.body * 1.3 * rand(0.94, 1.06), 2, 0.45);
   }
-  const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* noop */ } };
+  // 진동: 안드로이드는 vibrate, 아이폰은 쏙의 시스템 햅틱 트릭
+  const buzz = (ms) => {
+    const fb = window.Ssok && window.Ssok.feedback;
+    if (fb && fb.buzz) fb.buzz(ms);
+    else { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* noop */ } }
+  };
+
+  // 아이폰 무음 스위치가 켜져 있어도 소리가 나도록 '재생' 모드로 전환
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* noop */ }
+  const SILENT = 'data:audio/wav;base64,UklGRrQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YZABAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA';
+  let unlocked = false;
+  function unlock() {
+    audio();
+    if (unlocked) return;
+    unlocked = true;
+    try {
+      const el = new Audio(SILENT);
+      el.setAttribute('playsinline', '');
+      const pr = el.play();
+      if (pr && pr.catch) pr.catch(() => { unlocked = false; });
+    } catch (e) { unlocked = false; }
+  }
+  ['touchend', 'pointerup', 'click', 'keydown'].forEach((ev) => document.addEventListener(ev, unlock, { capture: true, passive: true }));
 
   document.querySelectorAll('.calm-mute').forEach((b) => b.addEventListener('click', () => {
     muted = !muted;
@@ -107,7 +129,7 @@
     const el = document.elementFromPoint(x, y);
     if (!el || !el.classList.contains('bubble') || el.classList.contains('popped')) return;
     el.classList.add('popped');
-    popSound(); buzz(8);
+    popSound(); buzz(30);
     $('pop-count').textContent = `${++pops}개 터뜨림`;
     if (!wrap.querySelector('.bubble:not(.popped)')) setTimeout(buildWrap, 700);
   }
@@ -152,7 +174,7 @@
     if (!k || k.classList.contains('down')) return;
     k.classList.add('down');
     keyDown(/w(15|5)/.test(k.className));
-    buzz(5);
+    buzz(/w(15|5)/.test(k.className) ? 28 : 18);
     $('key-count').textContent = `${++presses}번 딸깍`;
   }
   function release(k) {
@@ -186,6 +208,6 @@
   document.querySelectorAll('#switches button').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('#switches button').forEach((x) => x.classList.toggle('on', x === b));
     sw = b.dataset.sw;
-    keyDown(false); setTimeout(keyUp, 90);
+    keyDown(false); buzz(18); setTimeout(keyUp, 90);
   }));
 })();
