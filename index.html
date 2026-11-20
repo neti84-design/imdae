@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>심신안정</title>
+<style>
+  :root {
+    --bg: #f4efe8;
+    --ink: #3b3a36;
+    --soft: #8a857c;
+    --card: #fffdf9;
+    --accent: #7fb7a4;
+    --shadow: 0 10px 30px rgba(60, 50, 40, .12);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    user-select: none; -webkit-user-select: none;
+    overscroll-behavior: none;
+  }
+  .screen { display: none; min-height: 100vh; padding: 28px 18px 40px; flex-direction: column; align-items: center; }
+  .screen.active { display: flex; }
+
+  h1 { font-size: clamp(24px, 6vw, 36px); margin: 40px 0 8px; text-align: center; letter-spacing: -0.5px; }
+  .sub { color: var(--soft); margin: 0 0 32px; text-align: center; }
+
+  /* ---------- 메뉴 ---------- */
+  .menu { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; width: 100%; max-width: 640px; }
+  .menu button {
+    border: 0; background: var(--card); border-radius: 22px; padding: 28px 20px; cursor: pointer;
+    box-shadow: var(--shadow); text-align: left; color: var(--ink); font: inherit;
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .menu button:hover { transform: translateY(-3px); box-shadow: 0 16px 36px rgba(60,50,40,.16); }
+  .menu button:active { transform: scale(.97); }
+  .menu .emoji { font-size: 44px; display: block; margin-bottom: 12px; }
+  .menu .name { font-size: 20px; font-weight: 700; display: block; }
+  .menu .desc { color: var(--soft); font-size: 14px; margin-top: 4px; display: block; }
+
+  .topbar { width: 100%; max-width: 760px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .back {
+    border: 0; background: var(--card); border-radius: 999px; padding: 10px 16px; font: inherit; font-size: 14px;
+    color: var(--ink); cursor: pointer; box-shadow: var(--shadow);
+  }
+  .back:active { transform: scale(.96); }
+  .counter { color: var(--soft); font-size: 14px; }
+  .tool { border: 0; background: var(--ink); color: #fff; border-radius: 999px; padding: 10px 16px; font: inherit; font-size: 14px; cursor: pointer; }
+  .tool:active { transform: scale(.96); }
+  .tool.ghost { background: transparent; color: var(--ink); border: 1.5px solid #d8d0c4; }
+
+  /* ---------- 뽁뽁이 ---------- */
+  #wrap {
+    margin-top: 24px; width: 100%; max-width: 760px;
+    background: linear-gradient(135deg, rgba(220,236,245,.75), rgba(240,248,252,.9));
+    border-radius: 18px; padding: 16px; box-shadow: var(--shadow);
+    display: grid; gap: 8px; touch-action: none;
+  }
+  .bubble {
+    aspect-ratio: 1; border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, rgba(255,255,255,.95) 0 14%, rgba(255,255,255,.35) 22%, rgba(190,218,232,.55) 60%, rgba(150,190,210,.6) 100%);
+    box-shadow: inset -3px -4px 8px rgba(110,150,175,.35), 0 3px 6px rgba(90,130,160,.18);
+    transition: transform .08s ease;
+    cursor: pointer;
+  }
+  .bubble:active { transform: scale(.92); }
+  .bubble.popped {
+    background: radial-gradient(circle at 50% 50%, rgba(200,222,234,.25), rgba(170,200,215,.35));
+    box-shadow: inset 2px 2px 4px rgba(110,150,175,.25);
+    transform: scale(.86);
+    animation: pop .18s ease-out;
+  }
+  @keyframes pop { 0% { transform: scale(1.08); } 100% { transform: scale(.86); } }
+
+  /* ---------- 키캡 ---------- */
+  .switches { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 18px; }
+  .switches button {
+    border: 1.5px solid #d8d0c4; background: var(--card); padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 14px; cursor: pointer; color: var(--ink);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .switches button .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .switches button.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+
+  .board {
+    margin-top: 22px; background: linear-gradient(#2f3238, #23252a); padding: 16px; border-radius: 20px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.08);
+    display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 760px; touch-action: manipulation;
+  }
+  .row { display: flex; gap: 8px; }
+  .key {
+    flex: 1; height: clamp(46px, 11vw, 66px); border-radius: 10px; border: 0; cursor: pointer;
+    font: 600 clamp(12px, 3vw, 16px) inherit; font-family: inherit;
+    color: #4a463f;
+    background: linear-gradient(#fbf7ef, #e9e2d5);
+    box-shadow: 0 5px 0 #b9b09f, 0 6px 8px rgba(0,0,0,.35), inset 0 -3px 0 rgba(0,0,0,.05);
+    transition: transform .04s, box-shadow .04s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .key.alt { background: linear-gradient(#c9d9d2, #a9c3b8); color: #2f4a40; box-shadow: 0 5px 0 #7d998d, 0 6px 8px rgba(0,0,0,.35); }
+  .key.pink { background: linear-gradient(#f6d3d1, #e8b4b1); color: #6a3532; box-shadow: 0 5px 0 #c08683, 0 6px 8px rgba(0,0,0,.35); }
+  .key.down { transform: translateY(4px); box-shadow: 0 1px 0 #b9b09f, 0 2px 3px rgba(0,0,0,.35); }
+  .key.alt.down { box-shadow: 0 1px 0 #7d998d, 0 2px 3px rgba(0,0,0,.35); }
+  .key.pink.down { box-shadow: 0 1px 0 #c08683, 0 2px 3px rgba(0,0,0,.35); }
+  .w15 { flex: 1.5; } .w2 { flex: 2; } .w6 { flex: 6; }
+  .hint { color: var(--soft); font-size: 13px; margin-top: 16px; text-align: center; }
+
+  /* 음소거 */
+  .mute { position: fixed; right: 14px; bottom: 14px; border: 0; width: 46px; height: 46px; border-radius: 50%; background: var(--card); box-shadow: var(--shadow); font-size: 20px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<!-- 메뉴 -->
+<section class="screen active" id="menu">
+  <h1>다른 심신안정 으로 가실래요?</h1>
+  <p class="sub">마음이 가는 곳을 골라보세요 🌿</p>
+  <div class="menu">
+    <button data-go="bubble">
+      <span class="emoji">🫧</span>
+      <span class="name">뽁뽁이</span>
+      <span class="desc">톡톡 터뜨리는 에어캡</span>
+    </button>
+    <button data-go="keys">
+      <span class="emoji">⌨️</span>
+      <span class="name">키캡</span>
+      <span class="desc">딸깍딸깍 기계식 키보드</span>
+    </button>
+  </div>
+</section>
+
+<!-- 뽁뽁이 -->
+<section class="screen" id="bubble">
+  <div class="topbar">
+    <button class="back" data-go="menu">← 다른 심신안정 으로 가실래요?</button>
+    <span class="counter" id="popCount">0개 터뜨림</span>
+    <button class="tool" id="newWrap">새 뽁뽁이</button>
+  </div>
+  <div id="wrap"></div>
+  <p class="hint">손가락으로 쓸어도 터져요</p>
+</section>
+
+<!-- 키캡 -->
+<section class="screen" id="keys">
+  <div class="topbar">
+    <button class="back" data-go="menu">← 다른 심신안정 으로 가실래요?</button>
+    <span class="counter" id="keyCount">0번 딸깍</span>
+  </div>
+  <div class="switches" id="switches">
+    <button data-sw="blue" class="on"><span class="dot" style="background:#4a8fe0"></span>청축 (찰칵)</button>
+    <button data-sw="brown"><span class="dot" style="background:#8a5a3b"></span>갈축 (도각)</button>
+    <button data-sw="red"><span class="dot" style="background:#d9483b"></span>적축 (서걱)</button>
+    <button data-sw="thock"><span class="dot" style="background:#333"></span>도각도각 (묵직)</button>
+  </div>
+  <div class="board" id="board"></div>
+  <p class="hint">화면을 누르거나 키보드를 직접 쳐보세요</p>
+</section>
+
+<button class="mute" id="mute" title="소리">🔊</button>
+
+<script>
+/* ================= 오디오 ================= */
+let ctx = null, master = null, muted = false;
+function audio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(ctx.destination);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+function noiseBuffer(dur) {
+  const c = audio();
+  const len = Math.floor(c.sampleRate * dur);
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// 짧은 노이즈 버스트
+function burst({ t, dur, type = 'bandpass', freq, q = 1, gain = 1, decay }) {
+  const c = audio();
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(dur);
+  const f = c.createBiquadFilter();
+  f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = c.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (decay || dur));
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start(t); src.stop(t + dur);
+}
+// 짧은 톤 (피치 스윕)
+function tone({ t, f0, f1, dur, gain = .5, type = 'sine' }) {
+  const c = audio();
+  const o = c.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + .02);
+}
+
+// 뽁! 소리
+function popSound() {
+  if (muted) return;
+  const c = audio(), t = c.currentTime;
+  const p = rand(0.85, 1.2);
+  burst({ t, dur: .06, type: 'highpass', freq: 1800 * p, q: .7, gain: 1.2, decay: .04 });
+  burst({ t, dur: .09, type: 'bandpass', freq: 900 * p, q: 2, gain: .9, decay: .07 });
+  tone({ t, f0: 520 * p, f1: 140 * p, dur: .08, gain: .55 });
+}
+
+// 키캡 소리 (스위치별)
+const SWITCH = {
+  blue:  { click: true,  clickF: 4200, body: 2600, bodyQ: 3, low: 180, lowGain: .25, up: true },
+  brown: { click: false, body: 1700, bodyQ: 2.2, low: 160, lowGain: .45, up: true },
+  red:   { click: false, body: 1300, bodyQ: 1.6, low: 140, lowGain: .35, up: false },
+  thock: { click: false, body: 700,  bodyQ: 1.4, low: 95,  lowGain: .9,  up: false },
+};
+let currentSwitch = 'blue';
+function keyDownSound(big) {
+  if (muted) return;
+  const c = audio(), t = c.currentTime, s = SWITCH[currentSwitch];
+  const p = rand(.94, 1.06) * (big ? .85 : 1);
+  if (s.click) {
+    burst({ t, dur: .02, type: 'highpass', freq: s.clickF * p, q: 1, gain: 1.4, decay: .015 });
+    tone({ t, f0: 3200 * p, f1: 2200 * p, dur: .015, gain: .3, type: 'square' });
+  }
+  burst({ t: t + (s.click ? .008 : 0), dur: .05, type: 'bandpass', freq: s.body * p, q: s.bodyQ, gain: 1.1, decay: .04 });
+  tone({ t, f0: s.low * 2 * p, f1: s.low * p, dur: big ? .12 : .07, gain: s.lowGain });
+}
+function keyUpSound() {
+  if (muted) return;
+  const s = SWITCH[currentSwitch];
+  if (!s.up) return;
+  const c = audio(), t = c.currentTime, p = rand(.94, 1.06);
+  burst({ t, dur: .025, type: 'bandpass', freq: s.body * 1.3 * p, q: 2, gain: .45, decay: .02 });
+}
+
+/* ================= 화면 전환 ================= */
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
+  audio();
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(b.dataset.go).classList.add('active');
+  window.scrollTo(0, 0);
+}));
+document.getElementById('mute').addEventListener('click', e => {
+  muted = !muted; e.currentTarget.textContent = muted ? '🔇' : '🔊';
+});
+
+/* ================= 뽁뽁이 ================= */
+const wrap = document.getElementById('wrap');
+let popCount = 0;
+function buildWrap() {
+  const cols = window.innerWidth < 500 ? 7 : 10;
+  const rows = window.innerWidth < 500 ? 11 : 8;
+  wrap.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  wrap.innerHTML = '';
+  for (let i = 0; i < cols * rows; i++) {
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    wrap.appendChild(b);
+  }
+}
+function popAt(el) {
+  if (!el || !el.classList || !el.classList.contains('bubble') || el.classList.contains('popped')) return;
+  el.classList.add('popped');
+  popSound();
+  if (navigator.vibrate) navigator.vibrate(8);
+  popCount++;
+  document.getElementById('popCount').textContent = `${popCount}개 터뜨림`;
+  if (!wrap.querySelector('.bubble:not(.popped)')) setTimeout(buildWrap, 700);
+}
+let dragging = false;
+wrap.addEventListener('pointerdown', e => { dragging = true; popAt(document.elementFromPoint(e.clientX, e.clientY)); });
+wrap.addEventListener('pointermove', e => { if (dragging) popAt(document.elementFromPoint(e.clientX, e.clientY)); });
+window.addEventListener('pointerup', () => dragging = false);
+window.addEventListener('pointercancel', () => dragging = false);
+document.getElementById('newWrap').addEventListener('click', buildWrap);
+buildWrap();
+
+/* ================= 키캡 ================= */
+const LAYOUT = [
+  [['Esc','Escape','pink'],['1','Digit1'],['2','Digit2'],['3','Digit3'],['4','Digit4'],['5','Digit5'],['6','Digit6'],['7','Digit7'],['8','Digit8'],['9','Digit9'],['0','Digit0'],['⌫','Backspace','alt w15']],
+  [['Tab','Tab','alt w15'],['ㅂ','KeyQ'],['ㅈ','KeyW'],['ㄷ','KeyE'],['ㄱ','KeyR'],['ㅅ','KeyT'],['ㅛ','KeyY'],['ㅕ','KeyU'],['ㅑ','KeyI'],['ㅐ','KeyO'],['ㅔ','KeyP']],
+  [['Caps','CapsLock','alt w15'],['ㅁ','KeyA'],['ㄴ','KeyS'],['ㅇ','KeyD'],['ㄹ','KeyF'],['ㅎ','KeyG'],['ㅗ','KeyH'],['ㅓ','KeyJ'],['ㅏ','KeyK'],['ㅣ','KeyL'],['Enter','Enter','pink w2']],
+  [['Shift','ShiftLeft','alt w2'],['ㅋ','KeyZ'],['ㅌ','KeyX'],['ㅊ','KeyC'],['ㅍ','KeyV'],['ㅠ','KeyB'],['ㅜ','KeyN'],['ㅡ','KeyM'],['Shift','ShiftRight','alt w2']],
+  [['Ctrl','ControlLeft','alt w15'],['Alt','AltLeft','alt w15'],['','Space','w6'],['한/영','AltRight','alt w15'],['☺','ControlRight','pink w15']],
+];
+const board = document.getElementById('board');
+const keyEls = {};
+LAYOUT.forEach(r => {
+  const row = document.createElement('div'); row.className = 'row';
+  r.forEach(([label, code, cls]) => {
+    const k = document.createElement('button');
+    k.className = 'key ' + (cls || '');
+    k.textContent = label;
+    k.dataset.code = code;
+    keyEls[code] = k;
+    row.appendChild(k);
+  });
+  board.appendChild(row);
+});
+let keyCount = 0;
+function press(k) {
+  if (!k || k.classList.contains('down')) return;
+  k.classList.add('down');
+  keyDownSound(/w(2|6)/.test(k.className));
+  if (navigator.vibrate) navigator.vibrate(5);
+  keyCount++;
+  document.getElementById('keyCount').textContent = `${keyCount}번 딸깍`;
+}
+function release(k) {
+  if (!k || !k.classList.contains('down')) return;
+  k.classList.remove('down');
+  keyUpSound();
+}
+// 터치/마우스 (멀티터치 지원)
+const activePointers = {};
+board.addEventListener('pointerdown', e => {
+  const k = e.target.closest('.key'); if (!k) return;
+  e.preventDefault(); audio();
+  activePointers[e.pointerId] = k; press(k);
+});
+const endPointer = e => { const k = activePointers[e.pointerId]; if (k) { release(k); delete activePointers[e.pointerId]; } };
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
+board.addEventListener('contextmenu', e => e.preventDefault());
+
+// 실제 키보드
+window.addEventListener('keydown', e => {
+  if (!document.getElementById('keys').classList.contains('active')) return;
+  const k = keyEls[e.code]; if (!k) return;
+  e.preventDefault(); audio();
+  if (!e.repeat) press(k);
+});
+window.addEventListener('keyup', e => {
+  if (!document.getElementById('keys').classList.contains('active')) return;
+  release(keyEls[e.code]);
+});
+
+// 스위치 선택
+document.querySelectorAll('#switches button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#switches button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  currentSwitch = b.dataset.sw;
+  keyDownSound(false); setTimeout(keyUpSound, 90);
+}));
+</script>
+</body>
+</html>
