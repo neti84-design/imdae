@@ -1,0 +1,15 @@
+{
+  "name": "쏙 — 흰머리 뽑기",
+  "short_name": "쏙",
+  "description": "흰머리만 골라 쏙 뽑는 힐링 앱",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5efe7",
+  "theme_color": "#f5efe7",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
