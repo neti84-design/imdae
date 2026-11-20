@@ -77,13 +77,6 @@ button { font: inherit; color: inherit; }
 .style-bar.folded .style-fold { transform: rotate(180deg); }
 #tissue-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-.hint { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding: 0 20px calc(130px + var(--safe-b));
-  pointer-events: none; }
-.hint-card { background: rgba(40,30,25,.78); color: #fff; border-radius: 20px; padding: 18px 22px; font-size: 15px; line-height: 1.5;
-  animation: fadeUp .5s ease both; }
-.hint-card p { margin: 0 0 4px; }
-.hint-tap { display: block; margin-top: 10px; font-size: 12px; opacity: .7; }
-
 .overlay { position: absolute; inset: 0; display: flex; align-items: flex-end; background: rgba(40,28,22,.28); animation: fade .25s ease both; }
 .sheet { width: 100%; background: var(--sheet); border-radius: 28px 28px 0 0; padding: 28px 24px calc(24px + var(--safe-b));
   display: flex; flex-direction: column; gap: 10px; text-align: center; animation: sheetUp .35s cubic-bezier(.2,.9,.3,1) both; }
@@ -117,3 +110,106 @@ button { font: inherit; color: inherit; }
 @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } }
 @keyframes sheetUp { from { transform: translateY(100%); } }
 @keyframes twinkle { 50% { transform: scale(1.25) rotate(20deg); opacity: .7; } }
+
+/* HUD 오른쪽 버튼 묶음 */
+.hud-right { display: flex; gap: 8px; }
+
+/* 첫 판 따라하기 안내 */
+.coach { position: absolute; left: 0; right: 0; margin: 0 auto; width: fit-content; bottom: calc(118px + var(--safe-b)); max-width: calc(100% - 32px);
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px 12px 12px; border-radius: 26px; pointer-events: none;
+  background: rgba(40,30,25,.82); color: #fff; font-size: 15px; line-height: 1.4; box-shadow: 0 6px 18px rgba(0,0,0,.25);
+  animation: fadeUp .35s ease both; }
+.coach-step { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
+  background: var(--accent); font-size: 14px; }
+.coach.ok .coach-step { background: #7fb38a; }
+.coach b { color: #ffd9c2; }
+
+/* 사용법 */
+.guide { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(30,22,18,.55); animation: fade .25s ease both; }
+.guide-card { position: relative; width: 100%; max-width: 420px; background: var(--sheet); border-radius: 28px; padding: 22px 0 18px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.3); animation: fadeUp .35s ease both; }
+.guide-skip { position: absolute; top: 12px; right: 14px; border: 0; background: none; color: var(--muted); font-size: 14px; padding: 8px; cursor: pointer; z-index: 2; }
+.guide-viewport { overflow: hidden; touch-action: pan-y; }
+.guide-track { display: flex; transition: transform .35s cubic-bezier(.2,.9,.3,1); }
+.slide { flex: 0 0 100%; padding: 18px 24px 0; text-align: center; }
+.slide h3 { margin: 16px 0 8px; font-size: 20px; }
+.slide p { margin: 0; color: #5d4f47; font-size: 15px; line-height: 1.6; min-height: 4.8em; }
+.slide p b { color: var(--ink); }
+.guide-dots { display: flex; justify-content: center; gap: 7px; margin: 14px 0; }
+.guide-dots i { width: 7px; height: 7px; border-radius: 4px; background: #d9cfc5; transition: width .25s, background .25s; }
+.guide-dots i.on { width: 20px; background: var(--accent); }
+.guide-nav { display: flex; gap: 10px; padding: 0 22px; }
+.guide-nav .btn { padding: 14px; }
+.guide-nav .btn.soft { flex: 0 0 34%; display: block; }
+.guide-nav .btn.soft:disabled { visibility: hidden; }
+
+/* 데모 그림 */
+.demo { width: 100%; max-width: 300px; display: block; margin: 0 auto; overflow: visible; }
+.demo .bg { fill: #2c221d; }
+.demo .strands path { fill: none; stroke: #120d0b; stroke-width: 3.4; stroke-linecap: round; transform-box: fill-box; transform-origin: 50% 100%; }
+.demo .strands path.w { stroke: #f3efe8; stroke-width: 3.6; }
+.demo .finger circle:first-child { fill: rgba(255,255,255,.38); stroke: #fff; stroke-width: 2; }
+.demo .finger text { fill: #3b2f29; font-size: 14px; font-weight: 800; text-anchor: middle; }
+.demo .ring { fill: none; stroke: #ffcfb3; stroke-width: 3; stroke-dasharray: 139; stroke-dashoffset: 139; transform: rotate(-90deg); }
+.demo .arrow, .demo .up-arrow { fill: none; stroke: #ffcfb3; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.slide:not(.active) .demo * { animation-play-state: paused !important; }
+
+/* ① 쓸기 */
+.d1 .strands path { animation: bendR 3s ease-in-out infinite; animation-delay: var(--d); }
+.d1 .sweep { animation: sweep 3s ease-in-out infinite; }
+@keyframes sweep { 0% { transform: translate(14px,72px); opacity: 0; } 8% { opacity: 1; } 50% { transform: translate(226px,72px); opacity: 1; }
+  58%, 100% { transform: translate(226px,72px); opacity: 0; } }
+@keyframes bendR { 0%, 4% { transform: rotate(0); } 14% { transform: rotate(24deg); } 30% { transform: rotate(-9deg); } 42% { transform: rotate(4deg); }
+  54%, 100% { transform: rotate(0); } }
+
+/* ② 꾹 누르기 */
+.d2 .press { animation: press 3.2s ease-in-out infinite; }
+.d2 .press .ring { animation: ring 3.2s linear infinite; }
+.d2 .tweezers path { fill: none; stroke: #dfe4e8; stroke-width: 3.4; stroke-linecap: round; }
+.d2 .tweezers { opacity: 0; animation: tweezers 3.2s ease infinite; }
+@keyframes press { 0% { transform: translate(205px,128px); opacity: 0; } 10% { opacity: 1; } 30%, 88% { transform: translate(124px,66px); opacity: 1; }
+  96%, 100% { transform: translate(124px,66px); opacity: 0; } }
+@keyframes ring { 0%, 32% { stroke-dashoffset: 139; opacity: 1; } 58% { stroke-dashoffset: 0; opacity: 1; } 64%, 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes tweezers { 0%, 58% { opacity: 0; } 64%, 88% { opacity: 1; } 96%, 100% { opacity: 0; } }
+
+/* ③ 당기기 */
+.d3 .pullhair { transform-box: view-box; transform-origin: 118px 128px; animation: pullhair 3.4s ease-in infinite; }
+.d3 .bulb { fill: #fffdf8; opacity: 0; animation: bulb 3.4s linear infinite; }
+.d3 .bump { fill: #f5d9c6; animation: bump 3.4s ease-in infinite; transform-box: fill-box; transform-origin: center; }
+.d3 .pull { animation: pullf 3.4s ease-in infinite; }
+.d3 .pop { fill: #ffd9c2; font-size: 22px; font-weight: 800; opacity: 0; animation: pop 3.4s ease-out infinite; }
+.d3 .up-arrow { opacity: .8; animation: blink 3.4s linear infinite; }
+@keyframes pullhair { 0%, 18% { transform: translateY(0) scaleY(1); opacity: 1; } 56% { transform: translateY(0) scaleY(1.22); opacity: 1; }
+  60% { transform: translateY(-14px) scaleY(1); opacity: 1; } 82% { transform: translateY(-70px) scaleY(1); opacity: 0; } 100% { opacity: 0; } }
+@keyframes bulb { 0%, 57% { opacity: 0; } 60%, 80% { opacity: 1; } 84%, 100% { opacity: 0; } }
+@keyframes bump { 0%, 18% { transform: scale(1); } 56% { transform: scale(1.8); } 62%, 100% { transform: scale(1); } }
+@keyframes pullf { 0% { transform: translate(119px,72px); opacity: 0; } 10%, 18% { transform: translate(119px,72px); opacity: 1; }
+  56% { transform: translate(120px,40px); opacity: 1; } 76% { transform: translate(121px,6px); opacity: 0; } 100% { opacity: 0; } }
+@keyframes pop { 0%, 57% { opacity: 0; transform: translateY(6px); } 62% { opacity: 1; transform: translateY(0); } 80% { opacity: 1; } 92%, 100% { opacity: 0; } }
+@keyframes blink { 0%, 15% { opacity: 0; } 25%, 50% { opacity: .9; } 58%, 100% { opacity: 0; } }
+
+/* ④ 여러 손가락 */
+.d4 .hold { animation: holdL 5s ease-in-out infinite; }
+.d4 .reveal { animation: reveal 5s ease-in infinite; transform-box: view-box; transform-origin: 124px 132px; }
+.d4 .f1 { animation: f1 5s ease-in-out infinite; }
+.d4 .f2 { animation: f2 5s ease-in-out infinite; }
+.d4 .f2 .ring { animation: ring4 5s linear infinite; }
+@keyframes f1 { 0% { transform: translate(130px,74px); opacity: 0; } 6% { opacity: 1; } 22%, 88% { transform: translate(82px,74px); opacity: 1; }
+  96%, 100% { transform: translate(82px,74px); opacity: 0; } }
+@keyframes holdL { 0%, 8% { transform: rotate(0); } 22%, 86% { transform: rotate(-26deg); } 92% { transform: rotate(6deg); } 100% { transform: rotate(0); } }
+@keyframes f2 { 0%, 30% { transform: translate(200px,40px); opacity: 0; } 40% { transform: translate(127px,62px); opacity: 1; }
+  58% { transform: translate(127px,62px); opacity: 1; } 76% { transform: translate(130px,8px); opacity: 0; } 100% { opacity: 0; } }
+@keyframes ring4 { 0%, 40% { stroke-dashoffset: 139; opacity: 1; } 56% { stroke-dashoffset: 0; opacity: 1; } 60%, 100% { opacity: 0; } }
+@keyframes reveal { 0%, 58% { transform: translateY(0); opacity: 1; } 76% { transform: translateY(-60px); opacity: 0; } 92% { transform: translateY(0); opacity: 0; } 100% { opacity: 1; } }
+
+/* ⑤ 확대 */
+.d5 { overflow: hidden; border-radius: 18px; }
+.d5 .zoomer { transform-box: view-box; transform-origin: 120px 70px; animation: zoom 3.4s ease-in-out infinite; }
+.d5 .pa { animation: pa 3.4s ease-in-out infinite; }
+.d5 .pb { animation: pb 3.4s ease-in-out infinite; }
+@keyframes zoom { 0%, 18% { transform: scale(1); } 60%, 82% { transform: scale(1.55); } 100% { transform: scale(1); } }
+@keyframes pa { 0% { transform: translate(104px,78px); opacity: 0; } 12%, 18% { transform: translate(104px,78px); opacity: 1; }
+  60%, 74% { transform: translate(52px,78px); opacity: 1; } 84%, 100% { transform: translate(52px,78px); opacity: 0; } }
+@keyframes pb { 0% { transform: translate(136px,78px); opacity: 0; } 12%, 18% { transform: translate(136px,78px); opacity: 1; }
+  60%, 74% { transform: translate(188px,78px); opacity: 1; } 84%, 100% { transform: translate(188px,78px); opacity: 0; } }

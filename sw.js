@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 정적 파일 캐시
-const CACHE = 'ssok-v3';
+const CACHE = 'ssok-v4';
 const FILES = ['./', 'index.html', 'css/style.css', 'js/feedback.js', 'js/styles.js', 'js/game.js', 'js/app.js', 'icon.svg', 'manifest.webmanifest'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

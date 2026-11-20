@@ -434,6 +434,7 @@
       const x = p.x, y = p.y;
       if (p.mode === 'pending' && Math.hypot(x - p.x0, y - p.y0) > MOVE_SLOP) {
         p.mode = 'rummage';
+        if (this.hooks.onRummage) this.hooks.onRummage();
         this._brush(p.x0, p.y0, x - p.x0 - dx, y - p.y0 - dy, dt);
         this._arm(p, STILL_MS, true);
       }
@@ -596,6 +597,7 @@
         };
         p.mode = 'grab';
         this.fb.grab();
+        if (this.hooks.onGrab) this.hooks.onGrab();
         return;
       }
       if (quiet) return; // 뒤적이는 중엔 조용히 계속
@@ -687,6 +689,7 @@
       if (!g) return;
       if (instant) { this.grab = null; return; }
       this.snap = { g, t0: performance.now(), dur: 200, fx: g.fx, fy: g.fy, ten: g.tension };
+      if (this.hooks.onRelease) this.hooks.onRelease(g.tension);
       this.grab = null;
       const gp = this.pointers.get(g.pid);
       if (gp) gp.mode = 'rummage';
@@ -789,9 +792,39 @@
         }
       }
 
+      if (this.coachTarget && !this.grab && !this.finishing) this._drawCoachTarget(ctx, now);
       this._drawFlies(ctx, now);
       this._drawFx(ctx, now);
       if (this.finishing) this._drawFinish(ctx, now);
+    }
+
+    // 따라하기: 화면 안의 드러난 흰머리 하나에 반짝이는 동그라미
+    _drawCoachTarget(ctx, now) {
+      let h = this._coachHair;
+      const onScreen = (hh) => {
+        const [x, y] = this.toScreen(...bez(hh, hh.cut * 0.55));
+        return x > 40 && x < this.vw - 40 && y > 150 && y < this.vh - 140 ? [x, y] : null;
+      };
+      if (!h || h.removed || !onScreen(h)) {
+        let best = null, bd = Infinity;
+        for (const w of this.head.whites) {
+          if (w.removed || w.hidden) continue;
+          const p = onScreen(w);
+          if (!p) continue;
+          const d = Math.hypot(p[0] - this.vw / 2, p[1] - this.vh / 2);
+          if (d < bd) { bd = d; best = w; }
+        }
+        h = this._coachHair = best;
+      }
+      if (!h) return;
+      const [x, y] = onScreen(h) || this.toScreen(...bez(h, h.cut * 0.55));
+      const ph = (now % 1400) / 1400;
+      ctx.strokeStyle = `rgba(255,214,190,${0.9 * (1 - ph)})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, 16 + ph * 22, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,214,190,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, 14, 0, TAU); ctx.stroke();
     }
 
     _drawPulled(ctx, h, t, gx, gy, fx, fy, ten) {

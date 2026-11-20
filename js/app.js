@@ -13,7 +13,7 @@
 
   /* ---------- 저장 ---------- */
   const defaults = () => ({
-    settings: { vib: 'normal', sound: false, notify: false, seenHint: false, style: 'part', styleFolded: false },
+    settings: { vib: 'normal', sound: false, notify: false, seenGuide: false, style: 'part', styleFolded: false },
     records: { days: {}, total: 0, streak: 0, lastDaily: null },
     current: { free: null, daily: null }
   });
@@ -58,12 +58,36 @@
 
   /* ---------- 게임 ---------- */
   let mode = 'free';
-  const hint = $('hint');
+
+  /* ---------- 첫 판 따라하기 ---------- */
+  const coachEl = $('coach');
+  const COACH = [
+    { text: '손가락으로 머리카락을 <b>쓱 쓸어</b> 보세요' },
+    { text: '반짝이는 흰머리 위를 <b>꾹 누르고</b> 기다리세요', target: true },
+    { text: '집은 채로 <b>바깥쪽으로 천천히</b> 당기세요' },
+    { text: '잘했어요! 여러 손가락으로 가른 채 <b>다른 손가락</b>으로 뽑아도 돼요', done: true }
+  ];
+  let coachStep = -1, coachTimer = 0;
+  function coach(step, override) {
+    clearTimeout(coachTimer);
+    coachStep = step;
+    if (step < 0 || step >= COACH.length) { coachEl.hidden = true; game.coachTarget = false; return; }
+    const c = COACH[step];
+    coachEl.hidden = false;
+    coachEl.classList.toggle('ok', !!c.done);
+    $('coach-step').textContent = c.done ? '✓' : step + 1;
+    $('coach-text').innerHTML = override || c.text;
+    game.coachTarget = !!c.target;
+    if (c.done) coachTimer = setTimeout(() => coach(-1), 4500);
+  }
   const game = new S.Game($('stage'), $('tissue-canvas'), {
     onRemain(remain) { $('remain').textContent = remain; },
-    onTouch() {
-      if (!hint.hidden) { hint.hidden = true; data.settings.seenHint = true; save(); }
+    onRummage() { if (coachStep === 0) coach(1); },
+    onGrab() { if (coachStep === 0 || coachStep === 1) coach(2); },
+    onRelease(ten) {
+      if (coachStep === 2) coach(1, ten > 0.3 ? '아까워요! 조금만 더 <b>멀리</b> 당기면 뽑혀요. 다시 꾹 눌러 보세요' : '손을 떼면 놓쳐요. 다시 <b>꾹 눌러</b> 집어 보세요');
     },
+    onPluck() { if (coachStep >= 0 && coachStep <= 2) coach(3); },
     onRemove({ clean }) {
       const r = dayRec(today());
       r.count++; if (clean) r.clean++;
@@ -94,7 +118,6 @@
     mode = m;
     $('done').hidden = true;
     $('pause-menu').hidden = true;
-    hint.hidden = data.settings.seenHint;
     show('play'); // 먼저 보여야 캔버스 크기를 잴 수 있다
     const cur = data.current[m];
     if (cur && cur.v === 1 && (m !== 'daily' || cur.date === today())) game.load(cur);
@@ -103,6 +126,8 @@
     save();
     renderStyleBar();
     $('mode-tag').textContent = m === 'daily' ? '오늘의 한 판' : '';
+    coach(-1);
+    if (!data.settings.seenGuide) openGuide(true);
   }
 
   function newHead(m, style) {
@@ -146,6 +171,44 @@
   }
   function setFolded(f) { data.settings.styleFolded = f; save(); renderStyleBar(); }
   $('style-fold').addEventListener('click', () => setFolded(!data.settings.styleFolded));
+
+  /* ---------- 사용법 (움직이는 그림) ---------- */
+  const guideEl = $('guide');
+  const slides = [...document.querySelectorAll('#guide .slide')];
+  const dots = $('guide-dots');
+  slides.forEach(() => dots.appendChild(document.createElement('i')));
+  let gi = 0, guideCoach = false;
+  function guideGo(i) {
+    gi = Math.max(0, Math.min(slides.length - 1, i));
+    $('guide-track').style.transform = `translateX(${-gi * 100}%)`;
+    slides.forEach((sl, k) => sl.classList.toggle('active', k === gi));
+    [...dots.children].forEach((d, k) => d.classList.toggle('on', k === gi));
+    $('guide-prev').disabled = gi === 0;
+    $('guide-next').textContent = gi === slides.length - 1 ? (guideCoach ? '따라 해 보기' : '닫기') : '다음';
+  }
+  function openGuide(withCoach) {
+    guideCoach = withCoach;
+    guideEl.hidden = false;
+    guideGo(0);
+  }
+  function closeGuide(startCoach) {
+    guideEl.hidden = true;
+    data.settings.seenGuide = true; save();
+    if (startCoach && document.getElementById('screen-play').classList.contains('active')) coach(0);
+  }
+  $('guide-next').addEventListener('click', () => (gi === slides.length - 1 ? closeGuide(guideCoach) : guideGo(gi + 1)));
+  $('guide-prev').addEventListener('click', () => guideGo(gi - 1));
+  $('guide-skip').addEventListener('click', () => closeGuide(false));
+  // 옆으로 밀어서 넘기기
+  let swipeX = null;
+  guideEl.querySelector('.guide-viewport').addEventListener('pointerdown', (e) => { swipeX = e.clientX; });
+  guideEl.querySelector('.guide-viewport').addEventListener('pointerup', (e) => {
+    if (swipeX == null) return;
+    const d = e.clientX - swipeX; swipeX = null;
+    if (Math.abs(d) > 40) guideGo(gi + (d < 0 ? 1 : -1));
+  });
+  $('btn-help').addEventListener('click', () => { persist(); openGuide(true); });
+  $('btn-howto').addEventListener('click', () => openGuide(false));
 
   function persist() {
     if (game.head && !game.isComplete) { data.current[mode] = game.getState(); save(); }

@@ -34,6 +34,7 @@
       <button id="btn-play" class="btn primary big">뽑으러 가기</button>
       <button id="btn-daily" class="btn soft"><span class="label">오늘의 한 판</span><span class="sub"></span></button>
       <p id="today-line" class="today-line"></p>
+      <button id="btn-howto" class="btn text">손가락 사용법 보기</button>
     </div>
   </section>
 
@@ -43,9 +44,14 @@
     <div class="hud">
       <div class="pill remain"><span class="dot"></span>남은 흰머리 <b id="remain">0</b></div>
       <span id="mode-tag" class="mode-tag"></span>
+      <div class="hud-right">
+      <button id="btn-help" class="icon-btn" aria-label="사용법">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M9.2 9a2.9 2.9 0 1 1 4.1 2.6c-.8.4-1.3 1.1-1.3 2v.6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><circle cx="12" cy="17.6" r="1.3" fill="currentColor"/></svg>
+      </button>
       <button id="btn-pause" class="icon-btn" aria-label="일시정지">
         <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1.5" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1.5" fill="currentColor"/></svg>
       </button>
+      </div>
     </div>
     <div id="style-bar" class="style-bar" role="radiogroup" aria-label="머리 스타일">
       <div id="style-list" class="style-list"></div>
@@ -55,14 +61,9 @@
     </div>
     <div class="tissue" aria-label="뽑은 흰머리"><canvas id="tissue-canvas"></canvas></div>
 
-    <div id="hint" class="hint" hidden>
-      <div class="hint-card">
-        <p>손가락으로 쓸면 머리카락을 뒤적여요 · <b>여러 손가락</b>으로 가르고 있어도 돼요</p>
-        <p>흰머리 위에서 <b>꾹 누르거나 멈추면</b> 핀셋으로 집혀요</p>
-        <p>두 손가락을 <b>동시에</b> 대면 확대·이동</p>
-        <p>바깥쪽으로 <b>천천히</b> 당기면 뿌리째 쏙</p>
-        <span class="hint-tap">화면을 만지면 시작해요</span>
-      </div>
+    <div id="coach" class="coach" hidden>
+      <span id="coach-step" class="coach-step">1</span>
+      <span id="coach-text"></span>
     </div>
 
     <div id="pause-menu" class="overlay" hidden>
@@ -117,6 +118,109 @@
       <button id="btn-reset" class="btn text">기록 초기화</button>
     </div>
   </section>
+
+  <!-- 사용법 (움직이는 그림) -->
+  <div id="guide" class="guide" hidden>
+    <div class="guide-card">
+      <button id="guide-skip" class="guide-skip">건너뛰기</button>
+      <div class="guide-viewport">
+        <div id="guide-track" class="guide-track">
+
+          <section class="slide">
+            <svg class="demo d1" viewBox="0 0 240 140" aria-hidden="true">
+              <rect class="bg" width="240" height="140" rx="18"/>
+              <g class="strands">
+                <path style="--d:.24s" d="M30 132 C 26 96, 36 64, 32 26"/>
+                <path style="--d:.38s" d="M55 132 C 51 96, 61 64, 57 22"/>
+                <path style="--d:.52s" d="M80 132 C 76 96, 86 64, 82 28"/>
+                <path style="--d:.66s" class="w" d="M105 132 C 101 96, 111 64, 107 24"/>
+                <path style="--d:.80s" d="M130 132 C 126 96, 136 64, 132 26"/>
+                <path style="--d:.94s" d="M155 132 C 151 96, 161 64, 157 22"/>
+                <path style="--d:1.08s" d="M180 132 C 176 96, 186 64, 182 28"/>
+                <path style="--d:1.22s" d="M205 132 C 201 96, 211 64, 207 24"/>
+              </g>
+              <g class="finger sweep"><circle r="15"/><path class="arrow" d="M-4 -26 h18 m-6 -6 l6 6 -6 6"/></g>
+            </svg>
+            <h3>① 쓸어서 뒤적이기</h3>
+            <p>한 손가락으로 <b>쓱 쓸면</b> 머리카락이 찰랑 밀려나요. 그 밑에 숨은 흰머리를 찾아보세요.</p>
+          </section>
+
+          <section class="slide">
+            <svg class="demo d2" viewBox="0 0 240 140" aria-hidden="true">
+              <rect class="bg" width="240" height="140" rx="18"/>
+              <g class="strands still">
+                <path d="M40 132 C 36 96, 46 64, 42 26"/><path d="M70 132 C 66 96, 76 64, 72 22"/>
+                <path d="M95 132 C 91 96, 101 64, 97 28"/><path class="w" d="M122 132 C 118 96, 128 64, 124 20"/>
+                <path d="M150 132 C 146 96, 156 64, 152 26"/><path d="M178 132 C 174 96, 184 64, 180 22"/>
+                <path d="M205 132 C 201 96, 211 64, 207 28"/>
+              </g>
+              <g class="finger press"><circle r="15"/><circle class="ring" r="22"/></g>
+              <g class="tweezers"><path d="M126 66 L 168 26 M131 70 L 174 32"/></g>
+            </svg>
+            <h3>② 흰머리 위를 꾹 누르기</h3>
+            <p>흰머리 위에 손가락을 대고 <b>동그라미가 찰 때까지</b> 누르면 핀셋으로 집혀요. (검은 머리는 "앗"만 나와요)</p>
+          </section>
+
+          <section class="slide">
+            <svg class="demo d3" viewBox="0 0 240 140" aria-hidden="true">
+              <rect class="bg" width="240" height="140" rx="18"/>
+              <g class="strands still">
+                <path d="M40 132 C 36 96, 46 64, 42 26"/><path d="M70 132 C 66 96, 76 64, 72 22"/>
+                <path d="M165 132 C 161 96, 171 64, 167 26"/><path d="M195 132 C 191 96, 201 64, 197 22"/>
+              </g>
+              <ellipse class="bump" cx="118" cy="128" rx="6" ry="3"/>
+              <g class="pullhair"><path class="w" d="M118 128 C 116 100, 122 70, 120 30"/><ellipse class="bulb" cx="118" cy="128" rx="4" ry="5.5"/></g>
+              <g class="finger pull"><circle r="15"/></g>
+              <text class="pop" x="150" y="40">톡!</text>
+              <path class="up-arrow" d="M120 20 v-10 m-6 6 l6 -6 6 6"/>
+            </svg>
+            <h3>③ 바깥쪽으로 천천히 당기기</h3>
+            <p>집은 채로 손가락을 <b>바깥쪽으로 쭉</b> 당기면 "톡" 뽑혀요. <b>천천히</b> 당길수록 뿌리째 쏙! 빠르면 끊길 수 있어요.</p>
+          </section>
+
+          <section class="slide">
+            <svg class="demo d4" viewBox="0 0 240 140" aria-hidden="true">
+              <rect class="bg" width="240" height="140" rx="18"/>
+              <g class="strands">
+                <path class="hold" d="M60 132 C 56 96, 66 64, 62 26"/><path class="hold" d="M82 132 C 78 96, 88 64, 84 22"/>
+                <path class="hold" d="M104 132 C 100 96, 110 64, 106 28"/>
+                <path class="w reveal" d="M124 132 C 120 96, 130 64, 126 24"/>
+                <path d="M150 132 C 146 96, 156 64, 152 26"/><path d="M176 132 C 172 96, 182 64, 178 22"/>
+                <path d="M200 132 C 196 96, 206 64, 202 28"/>
+              </g>
+              <g class="finger f1"><circle r="15"/><text y="5">1</text></g>
+              <g class="finger f2"><circle r="15"/><circle class="ring" r="22"/><text y="5">2</text></g>
+            </svg>
+            <h3>④ 여러 손가락으로 가르기</h3>
+            <p><b>1번 손가락</b>으로 머리를 쓸어 가른 채 그대로 대고 있으면 벌어진 채 있어요. 그 사이 <b>2번 손가락</b>으로 흰머리를 꾹 눌러 뽑아요.</p>
+          </section>
+
+          <section class="slide">
+            <svg class="demo d5" viewBox="0 0 240 140" aria-hidden="true">
+              <rect class="bg" width="240" height="140" rx="18"/>
+              <g class="zoomer">
+                <g class="strands still">
+                  <path d="M70 132 C 66 96, 76 64, 72 26"/><path d="M95 132 C 91 96, 101 64, 97 22"/>
+                  <path class="w" d="M120 132 C 116 96, 126 64, 122 26"/><path d="M145 132 C 141 96, 151 64, 147 22"/>
+                  <path d="M170 132 C 166 96, 176 64, 172 28"/>
+                </g>
+              </g>
+              <g class="finger pa"><circle r="15"/></g>
+              <g class="finger pb"><circle r="15"/></g>
+            </svg>
+            <h3>⑤ 확대·이동</h3>
+            <p>두 손가락을 <b>동시에</b> 대고 벌리면 확대, 같이 움직이면 이동해요. 화면을 <b>톡톡 두 번</b> 눌러도 확대돼요.</p>
+          </section>
+
+        </div>
+      </div>
+      <div id="guide-dots" class="guide-dots"></div>
+      <div class="guide-nav">
+        <button id="guide-prev" class="btn soft">이전</button>
+        <button id="guide-next" class="btn primary">다음</button>
+      </div>
+    </div>
+  </div>
 
 </div>
 <script src="js/feedback.js"></script>
