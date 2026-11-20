@@ -6,14 +6,14 @@
 
   const W = 600;                 // 월드 폭 (높이는 화면 비율에 맞춰 생성)
   const TAU = Math.PI * 2;
-  const LONG_PRESS_MS = 220;     // 처음 꾹 누르고 있으면 집기
-  const STILL_MS = 260;          // 뒤적이다 이만큼 멈추면 집기
+  const LONG_PRESS_MS = 150;     // 처음 꾹 누르고 있으면 집기
+  const STILL_MS = 200;          // 뒤적이다 이만큼 멈추면 집기
   const PINCH_WINDOW_MS = 140;   // 두 손가락이 이 안에 같이 닿으면 이동·확대
-  const HOLD_PX = 24;            // 대고 있는 손가락이 머리카락을 막는 반경(화면 px)
+  const HOLD_PX = 38;            // 대고 있는 손가락이 머리카락을 막는 반경(화면 px)
   const MOVE_SLOP = 9;           // 이 이상 움직이면 뒤적이기
-  const PICK_PX = 20;            // 흰머리 집기 허용 반경(화면 px)
+  const PICK_PX = 34;            // 흰머리 집기 허용 반경(화면 px)
   const OOPS_PX = 9;             // 검은 머리 "앗" 판정 반경
-  const BRUSH_PX = 46;           // 손가락이 머리카락을 미는 반경(화면 px)
+  const BRUSH_PX = 74;           // 손가락이 머리카락을 미는 반경(화면 px)
   const MAX_ZOOM = 5.5;          // 최소 배율 대비 최대 배율
   const STUB_T = 0.16;           // 끊겼을 때 남는 길이 비율
 
@@ -87,7 +87,7 @@
         ang, a0, len, bend, curl, d: p.d, white,
         w: white ? Math.max(dd.w || 0, 1.9) + r() * 0.6 : dd.w || 1.3 + r() * 1.1,
         shade: Math.floor(r() * 4),
-        need: 80 + r() * 40,                // 뽑히는 당김 거리(px) 80~120
+        need: 45 + r() * 25,                // 뽑히는 당김 거리(px) 45~70
         ph: r() * TAU,
         k: white ? 110 + r() * 40 : 45 + r() * 35 - Math.min(len, 300) * 0.06,  // 흰머리는 뻣뻣
         give: white ? 0.3 : 1,              // 손가락에 밀리는 정도
@@ -103,7 +103,7 @@
     const make = (white) => { const p = st.root(g, r, W, H, white); return build(p, st.dir(g, r, p, white), white); };
 
     const whites = [], blacks = [], covers = [];
-    for (let i = 0; i < nWhite; i++) { const h = make(true); h.hidden = r() < st.hidden; whites.push(h); }
+    for (let i = 0; i < nWhite; i++) { const h = make(true); h.hidden = r() < st.hidden * 0.5; whites.push(h); }
     for (let i = 0; i < nBlack; i++) blacks.push(make(false));
     // 숨은 흰머리는 검은 머리 몇 가닥이 위를 덮는다 → 뒤적여야 보임
     for (const w of whites) {
@@ -498,22 +498,27 @@
         if (h.removed || h === skip) continue;
         const bb = h.bb;
         if (wx < bb[0] - R || wx > bb[2] + R || wy < bb[1] - R || wy > bb[3] + R) continue;
-        // 머리카락 중간~끝 몇 점과의 거리
-        let d2 = Infinity;
-        const pts = [[h.x1, h.y1], [h.x2, h.y2], [(h.x2 + h.x3) / 2, (h.y2 + h.y3) / 2], [h.x3, h.y3]];
-        for (const [px, py] of pts) {
+        // 머리카락 전체를 따라 촘촘히 재서 손가락이 사이로 빠지지 않게
+        let d2 = Infinity, bt = 1;
+        const n = Math.min(14, 4 + Math.ceil(h.len / 22));
+        for (let i = 1; i <= n; i++) {
+          const t = 0.12 + (0.88 * i) / n;
+          const [px, py] = bez(h, t);
           const e = (px - wx) * (px - wx) + (py - wy) * (py - wy);
-          if (e < d2) d2 = e;
+          if (e < d2) { d2 = e; bt = t; }
         }
         if (d2 >= R2) continue;
         let f = 1 - Math.sqrt(d2) / R;
-        f *= f * h.give;
-        h.ox += dwx * f * 0.95; h.oy += dwy * f * 0.95;
+        f = Math.pow(f, 1.1) * h.give;
+        // 닿은 지점이 손가락을 따라가도록 (뿌리 쪽을 건드리면 끝은 더 크게 움직임)
+        const u = 1 - bt, wt = 0.3 * u * u * bt + 1.35 * u * bt * bt + bt * bt * bt;
+        const gain = Math.min(1.15 / Math.max(wt, 0.05), 3.5);
+        h.ox += dwx * f * gain; h.oy += dwy * f * gain;
         h.vx += (fvx - h.vx) * f * 0.3; h.vy += (fvy - h.vy) * f * 0.3;
-        const m = Math.hypot(h.ox, h.oy), lim = h.len * 0.8;
+        const m = Math.hypot(h.ox, h.oy), lim = h.len * 1.1;
         if (m > lim) { h.ox *= lim / m; h.oy *= lim / m; }
         // 쓸린 쪽으로 결이 잠시 남는다 (갈라진 채 찰랑이다 천천히 돌아옴)
-        h.rx += (h.ox - h.rx) * f * 0.7; h.ry += (h.oy - h.ry) * f * 0.7;
+        h.rx += (h.ox - h.rx) * Math.min(1, f * 1.2); h.ry += (h.oy - h.ry) * Math.min(1, f * 1.2);
         moved += f;
       }
       if (moved > 0.5) this.fb.rustle(clamp(fv / 900, 0, 1));
@@ -547,7 +552,7 @@
           }
         }
         if (h.ox || h.oy || h.vx || h.vy || h.rx || h.ry) {
-          const decay = 1 - (h.white ? 2 : 0.4) * dt;      // 갈라진 결이 ~2.5초에 걸쳐 풀림
+          const decay = 1 - (h.white ? 2 : 0.13) * dt;     // 치운 머리는 ~8초에 걸쳐 천천히 돌아옴
           h.rx *= decay; h.ry *= decay;
           h.vx += (-h.k * (h.ox - h.rx) - 3.0 * h.vx) * dt;
           h.vy += (-h.k * (h.oy - h.ry) - 3.0 * h.vy) * dt;
@@ -647,8 +652,8 @@
     _pluck(sx, sy) {
       const g = this.grab, h = g.h;
       const v = this._speed();
-      // 천천히 당기면 뿌리째. 빠를수록 끊길 확률 ↑ (평균 약 85%)
-      let breakP = v < 0.55 ? 0.06 : v < 1.1 ? 0.16 : v < 1.9 ? 0.38 : 0.6;
+      // 천천히 당기면 뿌리째. 빠를수록 끊길 확률 ↑ (대부분 뿌리째)
+      let breakP = v < 0.8 ? 0.02 : v < 1.6 ? 0.06 : v < 2.6 ? 0.15 : 0.3;
       if (h.cut < 1) breakP = 0; // 남은 짧은 머리는 항상 뿌리째
       const broken = Math.random() < breakP;
 
